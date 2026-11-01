@@ -1,0 +1,36 @@
+# --- Секреты: токен подписки Claude, пароли, ключи. Никогда не коммитить ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+id_rsa*
+id_ed25519*
+.claude/settings.local.json
+.credentials.json
+
+# --- Личные данные: код учеников, сдачи ---
+workspace/*
+!workspace/README.md
+
+# --- Зависимости и сборки ---
+node_modules/
+dist/
+frontend/public/pyodide/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Система и редакторы ---
+.DS_Store
+.idea/
+.vscode/
+*.log

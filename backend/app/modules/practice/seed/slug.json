@@ -1,0 +1,18 @@
+{
+  "title": "Адрес страницы маршрута",
+  "kind": "python",
+  "statement": "У каждого маршрута на сайте клуба есть адрес вида `/routes/gora-fisht`. Последняя часть — *slug*: название латиницей, маленькими буквами, слова через дефис.\n\nНапишите функцию `make_slug(title: str) -> str`.\n\n| Название | Результат |\n| --- | --- |\n| `Гора Фишт` | `gora-fisht` |\n| `Озеро  Псенодах!` | `ozero-psenodah` |\n| `Тропа №3 — к водопаду` | `tropa-3-k-vodopadu` |\n| `` (пустая строка) | `` |\n\n**Правила:** русские буквы — по таблице транслитерации (ё → e, й → y, ж → zh, ц → ts, ч → ch, ш → sh, щ → sch, х → h, ю → yu, я → ya, ъ и ь — убрать); латиница и цифры остаются; всё остальное — разделитель; несколько разделителей подряд — один дефис; дефисов в начале и в конце нет.",
+  "starter": {
+    "main.py": "def make_slug(title: str) -> str:\n    \"\"\"Превращает название маршрута в адрес страницы.\"\"\"\n    # Ваш код здесь\n    return title\n\n\nprint(make_slug(\"Гора Фишт\"))\n"
+  },
+  "solution": {
+    "main.py": "import re\n\nTRANSLIT = dict(zip(\n    \"абвгдеёжзийклмнопрстуфхцчшщъыьэюя\",\n    [\"a\", \"b\", \"v\", \"g\", \"d\", \"e\", \"e\", \"zh\", \"z\", \"i\", \"y\", \"k\", \"l\", \"m\", \"n\", \"o\", \"p\", \"r\", \"s\", \"t\",\n     \"u\", \"f\", \"h\", \"ts\", \"ch\", \"sh\", \"sch\", \"\", \"y\", \"\", \"e\", \"yu\", \"ya\"],\n))\n\n\ndef make_slug(title: str) -> str:\n    \"\"\"Превращает название маршрута в адрес страницы.\"\"\"\n    latin = \"\".join(TRANSLIT.get(ch, ch) for ch in title.lower())\n    return re.sub(r\"[^a-z0-9]+\", \"-\", latin).strip(\"-\")\n\n\nprint(make_slug(\"Гора Фишт\"))\n"
+  },
+  "tests": "from main import make_slug\n\n\ndef test_simple():\n    \"\"\"«Гора Фишт» → gora-fisht\"\"\"\n    got = make_slug(\"Гора Фишт\")\n    assert got == \"gora-fisht\", f\"Получилось {got!r}, а нужно 'gora-fisht'\"\n\n\ndef test_punctuation():\n    \"\"\"Лишние пробелы и знаки становятся одним дефисом\"\"\"\n    got = make_slug(\"Озеро  Псенодах!\")\n    assert got == \"ozero-psenodah\", f\"Получилось {got!r}, а нужно 'ozero-psenodah'\"\n\n\ndef test_digits_and_dash():\n    \"\"\"Цифры остаются, «№» и тире — разделители\"\"\"\n    got = make_slug(\"Тропа №3 — к водопаду\")\n    assert got == \"tropa-3-k-vodopadu\", f\"Получилось {got!r}, а нужно 'tropa-3-k-vodopadu'\"\n\n\ndef test_hard_letters():\n    \"\"\"Сложные буквы: щ, ю, ь, ё\"\"\"\n    got = make_slug(\"Щучье ущелье, ёлки\")\n    assert got == \"schuche-uschele-elki\", f\"Получилось {got!r}, а нужно 'schuche-uschele-elki'\"\n\n\ndef test_empty():\n    \"\"\"Пустое название → пустая строка\"\"\"\n    assert make_slug(\"\") == \"\", \"Для пустой строки должен вернуться пустой адрес\"\n\n\ndef test_no_edge_dashes():\n    \"\"\"Нет дефисов в начале и в конце\"\"\"\n    got = make_slug(\"  — Фишт —  \")\n    assert got == \"fisht\", f\"Получилось {got!r}, а нужно 'fisht'\"\n",
+  "hints": [
+    "Сначала переведите строку в нижний регистр и замените каждую русскую букву по таблице — удобно через словарь.",
+    "Всё, что не латиница и не цифра, замените дефисом. Регулярное выражение [^a-z0-9]+ найдёт сразу группу таких символов.",
+    "Дефисы по краям уберёт метод strip('-')."
+  ],
+  "fragment_titles": []
+}

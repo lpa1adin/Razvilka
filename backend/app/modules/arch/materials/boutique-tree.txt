@@ -1,0 +1,78 @@
+microservices-demo/
+├── kubernetes-manifests/   (по манифесту на каждый сервис)
+├── helm-chart/
+├── istio-manifests/
+├── kustomize/
+├── terraform/
+├── protos/demo.proto      (общий контракт gRPC)
+└── src/
+    ├── adservice/
+    │   ├── Dockerfile
+    │   ├── build.gradle
+    │   └── settings.gradle
+    ├── cartservice/
+    │   └── cartservice.sln
+    ├── checkoutservice/
+    │   ├── Dockerfile
+    │   ├── go.mod
+    │   └── main.go
+    ├── currencyservice/
+    │   ├── Dockerfile
+    │   ├── client.js
+    │   ├── package.json
+    │   └── server.js
+    ├── emailservice/
+    │   ├── Dockerfile
+    │   ├── demo_pb2.py
+    │   ├── demo_pb2_grpc.py
+    │   ├── email_client.py
+    │   ├── email_server.py
+    │   ├── logger.py
+    │   └── requirements.txt
+    ├── frontend/
+    │   ├── Dockerfile
+    │   ├── deployment_details.go
+    │   ├── go.mod
+    │   ├── handlers.go
+    │   ├── main.go
+    │   ├── middleware.go
+    │   ├── packaging_info.go
+    │   └── rpc.go
+    ├── loadgenerator/
+    │   ├── Dockerfile
+    │   ├── locustfile.py
+    │   └── requirements.txt
+    ├── paymentservice/
+    │   ├── Dockerfile
+    │   ├── charge.js
+    │   ├── index.js
+    │   ├── logger.js
+    │   ├── package.json
+    │   └── server.js
+    ├── productcatalogservice/
+    │   ├── Dockerfile
+    │   ├── catalog_loader.go
+    │   ├── go.mod
+    │   ├── product_catalog.go
+    │   ├── product_catalog_test.go
+    │   ├── products.json
+    │   └── server.go
+    ├── recommendationservice/
+    │   ├── Dockerfile
+    │   ├── client.py
+    │   ├── demo_pb2.py
+    │   ├── demo_pb2_grpc.py
+    │   ├── logger.py
+    │   ├── recommendation_server.py
+    │   └── requirements.txt
+    ├── shippingservice/
+    │   ├── Dockerfile
+    │   ├── go.mod
+    │   ├── main.go
+    │   ├── quote.go
+    │   ├── shippingservice_test.go
+    │   └── tracker.go
+    └── shoppingassistantservice/
+        ├── Dockerfile
+        ├── requirements.txt
+        └── shoppingassistantservice.py

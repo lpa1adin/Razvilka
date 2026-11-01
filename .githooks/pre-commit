@@ -1,0 +1,18 @@
+#!/bin/sh
+# Не даёт закоммитить секреты: файлы .env/ключей и токены в добавленных строках.
+# Включается так: git config core.hooksPath .githooks
+fail=0
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+for f in $files; do
+  case "$f" in
+    .env.example) ;;
+    .env|.env.*|*/.env|*/.env.*|*.pem|*.key|*.p12|*id_rsa*|*id_ed25519*|*credentials.json)
+      echo "pre-commit: «$f» похож на файл с секретами — не коммитим"; fail=1 ;;
+  esac
+done
+# Токены Claude/Anthropic, GitHub, приватные ключи, непустой CLAUDE_CODE_OAUTH_TOKEN
+if git diff --cached -U0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' \
+   | grep -nE 'sk-ant-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|CLAUDE_CODE_OAUTH_TOKEN=[A-Za-z0-9_-]{20,}'; then
+  echo "pre-commit: в изменениях похоже на токен или ключ — уберите его (секреты живут только в .env)"; fail=1
+fi
+[ $fail -eq 0 ] || { echo "Если это ложное срабатывание: git commit --no-verify"; exit 1; }

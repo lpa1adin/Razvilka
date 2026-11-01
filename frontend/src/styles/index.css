@@ -1,0 +1,326 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --shadow-panel: var(--shadow);
+  /* Все transition-* по умолчанию — дольше и мягче стандартных 150 мс */
+  --default-transition-duration: 320ms;
+  --default-transition-timing-function: var(--ease-soft);
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--text);
+    /* Графитовый градиент вместо плоского чёрного (TURA) */
+    background: radial-gradient(120% 80% at 50% 0%, var(--bg-2) 0%, var(--bg) 60%) fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Без лигатур: в учебном коде == и === должны выглядеть по-разному */
+  code,
+  kbd,
+  pre,
+  samp,
+  .font-mono {
+    font-variant-ligatures: none;
+    font-feature-settings: 'calt' 0, 'liga' 0;
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+}
+
+@layer components {
+  /* Метка-надзаголовок: капслок с разрядкой, как подписи в TURA */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .wordmark {
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    line-height: 0.95;
+  }
+  .panel {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+  }
+  .glow-accent {
+    box-shadow: 0 0 0 1px var(--accent-soft), 0 10px 40px -12px var(--accent-glow);
+  }
+  /* Блик, пробегающий по главной кнопке при наведении */
+  .btn-shine::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 -60%;
+    width: 45%;
+    background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.45), transparent);
+    transform: skewX(-18deg);
+    transition: left 700ms var(--ease);
+    pointer-events: none;
+  }
+  .btn-shine:hover::before {
+    left: 130%;
+  }
+  /* Стрелки «ведут» вперёд */
+  .group:hover .lucide-arrow-right,
+  .group:hover .lucide-arrow-up-right {
+    transform: translateX(3px);
+  }
+  .group:hover .lucide-arrow-left {
+    transform: translateX(-3px);
+  }
+  .group:hover .lucide-rotate-ccw {
+    transform: rotate(-60deg);
+  }
+  .caret::after {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 1.1em;
+    margin-left: 2px;
+    vertical-align: -0.18em;
+    background: var(--accent);
+    animation: caret-blink 1s steps(1) infinite;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise-in {
+  animation: rise-in 600ms var(--ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Текст статей из источников (уже очищенный HTML с сервера) */
+.prose-content {
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.prose-content > * + * {
+  margin-top: 1em;
+}
+.prose-content h2,
+.prose-content h3,
+.prose-content h4 {
+  margin-top: 1.9em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.prose-content h2 {
+  font-size: 1.5em;
+}
+.prose-content h3 {
+  font-size: 1.22em;
+}
+.prose-content h4 {
+  font-size: 1.05em;
+}
+.prose-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.prose-content a:hover {
+  text-decoration-color: var(--accent);
+}
+.prose-content ul,
+.prose-content ol {
+  padding-left: 1.4em;
+}
+.prose-content ul {
+  list-style: disc;
+}
+.prose-content ol {
+  list-style: decimal;
+}
+.prose-content li + li {
+  margin-top: 0.35em;
+}
+.prose-content code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.12em 0.38em;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.prose-content pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 70%, black);
+  border: 1px solid var(--line);
+  line-height: 1.55;
+}
+.prose-content td code,
+.prose-content th code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.prose-content pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13.5px;
+}
+.prose-content blockquote {
+  padding: 12px 16px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent-soft);
+}
+.prose-content table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.prose-content th,
+.prose-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.prose-content th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.prose-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  background: #fff;
+}
+.prose-content hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.prose-content kbd {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+/* Смена темы: круг от кнопки (lib/theme.ts) — свою анимацию браузера отключаем, рисуем clip-path */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Иконка солнца/луны при смене темы поворачивается и проявляется */
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.icon-swap {
+  animation: icon-swap 0.45s var(--ease) both;
+}
+
+/* Мягкий источник света над рабочей областью: прожектор сверху, оттенок — по режиму (Учёба / Мастерская).
+   Слой фиксирован и не ловит клики; в светлой теме это тёплый блик. */
+.ambient-light {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: min(80vh, 760px);
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(38% 55% at 50% -6%, var(--light-core) 0%, var(--light-mid) 38%, transparent 72%),
+    radial-gradient(26% 38% at 50% -4%, var(--tint, var(--light-tint)) 0%, transparent 75%);
+  transition: left 300ms var(--ease), opacity 600ms var(--ease-soft);
+  animation: light-in 1.2s var(--ease-soft) both;
+}
+.ambient-light[data-mode='workshop'] {
+  --tint: var(--light-tint-ai);
+}
+@keyframes light-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Строка, на которую указал Ревьюер: мягкая янтарная подсветка, гаснет сама */
+.rz-review-line {
+  background: var(--ai-soft);
+  transition: background 600ms var(--ease-soft);
+}

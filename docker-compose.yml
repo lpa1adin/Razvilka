@@ -1,0 +1,119 @@
+# Развилка: модульный монолит + воркеры (ADR-001), запуск одной командой (ADR-009).
+# Порты открыты только на 127.0.0.1 — платформа локальная.
+
+x-backend: &backend
+  build: { context: ./backend, target: app }
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  web:
+    build: ./frontend
+    ports: ["127.0.0.1:${RZ_WEB_PORT:-8660}:80"]
+    depends_on: [api]
+    networks: [public]
+    restart: unless-stopped
+
+  api:
+    <<: *backend
+    networks: [public, internal]
+    volumes:
+      - ..:/projects:ro   # список проектов для Мастерской → Генерация
+      - ./workspace:/workspace   # рабочие папки путей «напиши заново сам»: ученик пишет в них в своём редакторе
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Воркеры — тот же образ, другая команда. Схему БД накатывает api, воркеры ждут его.
+  # agent-worker: генерация в Мастерской, ответы наставника и Ревьюер (Claude Agent SDK, ADR-007)
+  agent-worker:
+    <<: *backend
+    command: ["python", "-m", "app.workers", "agent", "chat", "review"]
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [public, internal]   # нужен интернет: Claude
+    volumes:
+      - ..:/projects:ro   # проекты владельца — только чтение (агенту доступны Read и Glob)
+
+  collector:
+    <<: *backend
+    command: ["python", "-m", "app.workers", "collector"]
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ""   # токен Claude нужен только agent-worker
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [public, internal]   # нужен интернет: белый список источников (этап 1)
+    volumes:
+      - sources:/var/cache/razvilka/sources   # копии репозиториев, чтобы не качать заново
+
+  runner:
+    <<: *backend
+    build: { context: ./backend, target: runner }   # тот же код + Chromium (Playwright)
+    command: ["python", "-m", "app.workers", "runner"]
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ""   # здесь выполняется код ученика — никаких секретов
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [internal]           # без интернета: здесь будет выполняться код ученика (ADR-006)
+    cpus: 1.0
+    mem_limit: 1g
+    pids_limit: 256
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: razvilka
+      POSTGRES_PASSWORD: razvilka
+      POSTGRES_DB: razvilka
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U razvilka"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports: ["127.0.0.1:${RZ_PROMETHEUS_PORT:-9090}:9090"]
+    networks: [public, internal]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${RZ_GRAFANA_PASSWORD:-change-me}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/razvilka.json
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafdata:/var/lib/grafana
+    ports: ["127.0.0.1:${RZ_GRAFANA_PORT:-3060}:3000"]
+    depends_on: [prometheus]
+    networks: [public, internal]
+    restart: unless-stopped
+
+networks:
+  public: {}
+  internal:
+    internal: true   # у этой сети нет выхода в интернет
+
+volumes:
+  pgdata: {}
+  promdata: {}
+  grafdata: {}
+  sources: {}

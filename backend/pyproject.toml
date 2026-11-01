@@ -1,0 +1,29 @@
+[project]
+name = "razvilka-backend"
+version = "0.1.0"
+description = "Развилка: API и фоновые воркеры (модульный монолит, ADR-001)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.4",
+    "argon2-cffi>=23.1",
+    "prometheus-client>=0.20",
+    "markdown-it-py>=4.2.0",
+    "nh3>=0.3.7",
+    "pyyaml>=6.0.3",
+    "claude-agent-sdk>=0.2.176",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "httpx>=0.27"]
+# только для образа runner: Chromium для проверки веб-заданий
+runner = ["playwright>=1.48"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+markers = ["reviewer: тест проверяет шлюз Ревьюера перед публикацией"]

@@ -1,0 +1,86 @@
+/*
+  Токены «Развилки». Характер (зафиксирован, не отступать):
+  - тёмный графит с градиентом (референс TURA), один акцент — терминальный зелёный;
+  - янтарный — только то, что связано с Claude/ИИ (референс со светящимся шаром);
+  - радиус 8 px — нейтрально-функциональный, приложение для работы;
+  - кнопки 40 px, начертание 500; заголовки 600, словесный знак — капслок с разрядкой.
+*/
+:root {
+  --bg: #0b0d10;
+  --bg-2: #1a1d22;
+  --surface: #12151a;
+  --surface-2: #171b21;
+  --line: #232830;
+  --line-strong: #323944;
+  --text: #e6e8eb;
+  --muted: #8a93a0;
+  --faint: #5b6470;
+
+  --accent: #5be49b;
+  --accent-ink: #06130c;
+  --accent-soft: rgb(91 228 155 / 0.12);
+  --accent-glow: rgb(91 228 155 / 0.35);
+
+  --ai: #f5a524;
+  --ai-soft: rgb(245 165 36 / 0.12);
+
+  --danger: #f87171;
+  --danger-soft: rgb(248 113 113 / 0.12);
+
+  --code-token: rgb(230 232 235 / 0.9);
+
+  --radius: 8px;
+  --radius-lg: 14px;
+  --shadow: 0 24px 60px -20px rgb(0 0 0 / 0.65), 0 2px 6px rgb(0 0 0 / 0.35);
+
+  --font-sans: 'Manrope Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Мягкое «выдыхание» для смены состояний: дольше разгон и плавная остановка */
+  --ease-soft: cubic-bezier(0.25, 0.8, 0.25, 1);
+  --dur: 220ms;
+
+  /* Источник света над рабочей областью (референсы владельца: прожектор сверху) */
+  --light-core: rgb(255 255 255 / 0.075);
+  --light-mid: rgb(255 255 255 / 0.022);
+  --light-tint: rgb(91 228 155 / 0.055);
+  --light-tint-ai: rgb(245 165 36 / 0.06);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f3f4f1;
+  --bg-2: #e6e8e3;
+  --surface: #ffffff;
+  --surface-2: #f7f8f6;
+  --line: #e1e4de;
+  --line-strong: #cdd2ca;
+  --text: #14171c;
+  --muted: #5b6470;
+  --faint: #8a93a0;
+
+  /* Акценты темнее: на светлом фоне нужен контраст AA */
+  --accent: #12804a;
+  --accent-ink: #ffffff;
+  --accent-soft: rgb(18 128 74 / 0.1);
+  --accent-glow: rgb(18 128 74 / 0.22);
+
+  --ai: #a85f00;
+  --ai-soft: rgb(168 95 0 / 0.1);
+
+  --danger: #c43c3c;
+  --danger-soft: rgb(196 60 60 / 0.1);
+
+  --code-token: rgb(20 23 28 / 0.85);
+  --shadow: 0 20px 50px -24px rgb(20 23 28 / 0.25), 0 1px 3px rgb(20 23 28 / 0.08);
+
+  /* Днём свет — тёплый белый блик на сером, а не свечение */
+  --light-core: rgb(255 255 255 / 0.95);
+  --light-mid: rgb(255 253 248 / 0.45);
+  --light-tint: rgb(18 128 74 / 0.05);
+  --light-tint-ai: rgb(168 95 0 / 0.06);
+
+  color-scheme: light;
+}

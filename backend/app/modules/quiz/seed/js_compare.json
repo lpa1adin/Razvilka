@@ -1,0 +1,297 @@
+{
+ "title": "JavaScript: сравнения и типы",
+ "description": "Как JavaScript сравнивает значения разных типов и где здесь ловушки.",
+ "size": 10,
+ "questions": [
+  {
+   "type": "single",
+   "subtopic": "Сравнения",
+   "difficulty": 1,
+   "prompt": "Что вернёт `'2' > 1`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`true`"
+     },
+     {
+      "id": "b",
+      "text": "`false`"
+     },
+     {
+      "id": "c",
+      "text": "`NaN`"
+     },
+     {
+      "id": "d",
+      "text": "Ошибку"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "При сравнении разных типов значения приводятся к числу: `'2'` становится `2`.",
+   "source": "learnjs-ru",
+   "fragment": "Операторы сравнения"
+  },
+  {
+   "type": "single",
+   "subtopic": "Сравнения",
+   "difficulty": 2,
+   "prompt": "Что вернёт `null == 0`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`false`"
+     },
+     {
+      "id": "b",
+      "text": "`true`"
+     },
+     {
+      "id": "c",
+      "text": "`null`"
+     },
+     {
+      "id": "d",
+      "text": "Ошибку"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "Для `==` значение `null` равно только `undefined` (и самому себе), к числу оно здесь не приводится.",
+   "source": "learnjs-ru",
+   "fragment": "Операторы сравнения"
+  },
+  {
+   "type": "single",
+   "subtopic": "Сравнения",
+   "difficulty": 3,
+   "prompt": "Что вернёт `null >= 0`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`true`"
+     },
+     {
+      "id": "b",
+      "text": "`false`"
+     },
+     {
+      "id": "c",
+      "text": "`undefined`"
+     },
+     {
+      "id": "d",
+      "text": "Ошибку"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "Операторы `>`, `<`, `>=`, `<=` приводят `null` к числу `0`, поэтому `0 >= 0` — истина. Отсюда «странное» `null == 0 // false`.",
+   "source": "learnjs-ru",
+   "fragment": "Операторы сравнения"
+  },
+  {
+   "type": "single",
+   "subtopic": "Сравнения",
+   "difficulty": 2,
+   "prompt": "Что вернёт `'Б' > 'А'`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`true`"
+     },
+     {
+      "id": "b",
+      "text": "`false`"
+     },
+     {
+      "id": "c",
+      "text": "`NaN`"
+     },
+     {
+      "id": "d",
+      "text": "Зависит от браузера"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "Строки сравниваются посимвольно по кодам Unicode; код «Б» больше кода «А».",
+   "source": "learnjs-ru",
+   "fragment": "Операторы сравнения"
+  },
+  {
+   "type": "multiple",
+   "subtopic": "Сравнения",
+   "difficulty": 2,
+   "prompt": "Какие выражения вернут `true`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`0 == false`"
+     },
+     {
+      "id": "b",
+      "text": "`'' == false`"
+     },
+     {
+      "id": "c",
+      "text": "`undefined == null`"
+     },
+     {
+      "id": "d",
+      "text": "`0 === false`"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "explanation": "Нестрогое `==` приводит типы, а строгое `===` сравнивает без приведения: число и логическое значение — разные типы.",
+   "source": "learnjs-ru",
+   "fragment": "Операторы сравнения"
+  },
+  {
+   "type": "single",
+   "subtopic": "Типы",
+   "difficulty": 1,
+   "prompt": "Что вернёт `typeof null`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`'object'`"
+     },
+     {
+      "id": "b",
+      "text": "`'null'`"
+     },
+     {
+      "id": "c",
+      "text": "`'undefined'`"
+     },
+     {
+      "id": "d",
+      "text": "`'number'`"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "Это официально признанная ошибка языка, оставленная ради совместимости: `null` — отдельный тип, но `typeof` говорит `'object'`.",
+   "source": "learnjs-ru",
+   "fragment": "Типы данных"
+  },
+  {
+   "type": "single",
+   "subtopic": "Типы",
+   "difficulty": 2,
+   "prompt": "Чему равно `Number('')`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`0`"
+     },
+     {
+      "id": "b",
+      "text": "`NaN`"
+     },
+     {
+      "id": "c",
+      "text": "`undefined`"
+     },
+     {
+      "id": "d",
+      "text": "`''`"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "Пустая строка (и строка из пробелов) при численном преобразовании даёт `0`.",
+   "source": "learnjs-ru",
+   "fragment": "Преобразование типов"
+  },
+  {
+   "type": "single",
+   "subtopic": "Операторы",
+   "difficulty": 2,
+   "prompt": "Что вернёт `null ?? 'гость'`?",
+   "code": "",
+   "code_lang": "",
+   "options": {
+    "items": [
+     {
+      "id": "a",
+      "text": "`'гость'`"
+     },
+     {
+      "id": "b",
+      "text": "`null`"
+     },
+     {
+      "id": "c",
+      "text": "`false`"
+     },
+     {
+      "id": "d",
+      "text": "`undefined`"
+     }
+    ]
+   },
+   "answer": {
+    "correct": [
+     "a"
+    ]
+   },
+   "explanation": "`??` возвращает правый операнд, если левый — `null` или `undefined`.",
+   "source": "learnjs-ru",
+   "fragment": "Операторы нулевого слияния и присваивания: '??', '??='"
+  }
+ ]
+}

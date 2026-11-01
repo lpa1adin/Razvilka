@@ -1,0 +1,24 @@
+{
+  "title": "Шапка сайта про гору Фишт",
+  "kind": "web",
+  "statement": "Сверстайте шапку лендинга походного клуба.\n\n**Что должно быть:**\n\n1. Шапка размечена тегом `<header>`.\n2. Слева — логотип: элемент с классом `logo` и текстом «Фишт».\n3. Справа — навигация `<nav>` с тремя ссылками: «Маршруты», «Снаряжение», «Контакты». У каждой ссылки есть адрес (`href`), например `#routes`.\n4. Кнопка-ссылка «Записаться в поход» с классом `cta`.\n5. На компьютере логотип и меню стоят **в одну строку**.\n6. На телефоне (375 px) ссылки меню идут **друг под другом** и не вылезают за край экрана.\n\nПодсказка: раскладку проще всего сделать на flexbox — статья привязана к заданию.",
+  "starter": {
+    "index.html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <!-- Шапка здесь -->\n\n  <main>\n    <h1>Походы на гору Фишт</h1>\n    <p>Пятидневный маршрут через плато Лаго-Наки.</p>\n  </main>\n  <script src=\"script.js\"></script>\n</body>\n</html>\n",
+    "style.css": "body {\n  margin: 0;\n  font-family: system-ui, sans-serif;\n}\n",
+    "script.js": ""
+  },
+  "solution": {
+    "index.html": "<!doctype html>\n<html lang=\"ru\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <header class=\"header\">\n    <a class=\"logo\" href=\"#\">Фишт</a>\n    <nav class=\"nav\">\n      <a href=\"#routes\">Маршруты</a>\n      <a href=\"#gear\">Снаряжение</a>\n      <a href=\"#contacts\">Контакты</a>\n    </nav>\n    <a class=\"cta\" href=\"#signup\">Записаться в поход</a>\n  </header>\n\n  <main>\n    <h1>Походы на гору Фишт</h1>\n    <p>Пятидневный маршрут через плато Лаго-Наки.</p>\n  </main>\n  <script src=\"script.js\"></script>\n</body>\n</html>\n",
+    "style.css": "body {\n  margin: 0;\n  font-family: system-ui, sans-serif;\n}\n\n.header {\n  display: flex;\n  align-items: center;\n  gap: 24px;\n  padding: 16px 32px;\n}\n\n.nav {\n  display: flex;\n  gap: 16px;\n  margin-left: auto;\n}\n\n@media (max-width: 600px) {\n  .header {\n    flex-direction: column;\n    align-items: flex-start;\n    padding: 16px;\n  }\n  .nav {\n    flex-direction: column;\n    margin-left: 0;\n    gap: 8px;\n  }\n}\n",
+    "script.js": ""
+  },
+  "tests": "test('Шапка размечена тегом <header>', () => {\n  expect($('header'), 'На странице нет элемента <header>')\n})\n\ntest('В шапке есть логотип с текстом «Фишт»', () => {\n  const logo = $('header .logo')\n  expect(logo, 'В <header> нет элемента с классом logo')\n  expect(logo.textContent.includes('Фишт'), 'В логотипе нет текста «Фишт»')\n})\n\ntest('В шапке есть меню <nav> с тремя ссылками', () => {\n  const links = $$('header nav a')\n  expect($('header nav'), 'В <header> нет <nav>')\n  expect(links.length === 3, `В меню ссылок: ${links.length}, а нужно 3`)\n})\n\ntest('У каждой ссылки меню есть адрес', () => {\n  const empty = $$('header nav a').filter((a) => !a.getAttribute('href'))\n  expect(empty.length === 0, `Без href: ${empty.map((a) => a.textContent.trim()).join(', ')}`)\n})\n\ntest('Есть кнопка «Записаться в поход»', () => {\n  const cta = $('.cta')\n  expect(cta, 'Нет элемента с классом cta')\n  expect(/записаться/i.test(cta.textContent), 'На кнопке нет слова «Записаться»')\n})\n\ntest('На компьютере логотип и меню в одну строку', () => {\n  expect($('header .logo') && $('header nav'), 'Сначала нужны логотип и меню внутри <header>')\n  const logo = $('header .logo').getBoundingClientRect()\n  const nav = $('header nav').getBoundingClientRect()\n  const sameLine = nav.top < logo.bottom && logo.top < nav.bottom\n  expect(sameLine, 'Меню стоит под логотипом — сделайте шапку строкой (например, display: flex)')\n})\n\ntest('На телефоне ссылки меню друг под другом', { width: 375 }, () => {\n  const links = $$('header nav a').map((a) => a.getBoundingClientRect())\n  expect(links.length === 3, 'В меню не три ссылки')\n  const stacked = links.every((r, i) => i === 0 || r.top >= links[i - 1].bottom - 1)\n  expect(stacked, 'На ширине 375 px ссылки стоят в строку — поставьте их в колонку через @media')\n})\n\ntest('На телефоне шапка не вылезает за край экрана', { width: 375 }, () => {\n  expect(document.documentElement.scrollWidth <= 375, `Ширина страницы ${document.documentElement.scrollWidth} px — появилась горизонтальная прокрутка`)\n})\n",
+  "hints": [
+    "Внутри <header> нужны три части: ссылка с классом logo, <nav> со ссылками и ссылка с классом cta.",
+    "Чтобы логотип и меню встали в строку, задайте шапке display: flex. Отодвинуть меню вправо поможет margin-left: auto.",
+    "Для телефона добавьте @media (max-width: 600px) и поменяйте направление: flex-direction: column — и у шапки, и у меню."
+  ],
+  "fragment_titles": [
+    "Flexbox"
+  ]
+}

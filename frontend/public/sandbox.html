@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  Песочница для кода ученика. Открывается в iframe с атрибутом sandbox (без allow-same-origin):
+  у страницы своё «пустое» происхождение — ни cookie, ни API платформы ей недоступны.
+  Своя политика CSP (nginx.conf): скрипты страницы разрешены, сетевые запросы — нет.
+-->
+<html lang="ru">
+<head><meta charset="utf-8"><title>Песочница</title></head>
+<body>
+<script>
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.parent || !event.data || event.data.rz !== 'render') return
+    document.open()
+    document.write(event.data.html)
+    document.close()
+  }, { once: true })
+  window.parent.postMessage({ rz: true, type: 'ready' }, '*')
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "title": "Сложные маршруты клуба",
+  "kind": "sql",
+  "statement": "В таблице `routes` — маршруты клуба:\n\n| Столбец | Что в нём |\n| --- | --- |\n| `id` | номер |\n| `name` | название |\n| `region` | район |\n| `length_km` | длина, км |\n| `difficulty` | сложность от 1 до 5 |\n| `days` | сколько дней идти |\n\nНапишите запрос, который вернёт **название и длину** (`name`, `length_km`) маршрутов сложности **4 и выше**, от самого длинного к самому короткому.\n\nДанные таблицы менять нельзя.",
+  "starter": {
+    "query.sql": "-- Посмотрите, что лежит в таблице, и перепишите запрос\nSELECT * FROM routes;\n"
+  },
+  "solution": {
+    "query.sql": "SELECT name, length_km\nFROM routes\nWHERE difficulty >= 4\nORDER BY length_km DESC;\n"
+  },
+  "sql_setup": "CREATE TABLE routes (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  region TEXT NOT NULL,\n  length_km REAL NOT NULL,\n  difficulty INTEGER NOT NULL CHECK (difficulty BETWEEN 1 AND 5),\n  days INTEGER NOT NULL\n);\n\nINSERT INTO routes (name, region, length_km, difficulty, days) VALUES\n  ('Гора Фишт', 'Лаго-Наки', 54.5, 5, 5),\n  ('Озеро Псенодах', 'Лаго-Наки', 18.0, 2, 1),\n  ('Перевал Гузерипль', 'Адыгея', 32.0, 4, 3),\n  ('Ущелье Мишоко', 'Адыгея', 9.5, 1, 1),\n  ('Пшехо-Су', 'Лаго-Наки', 41.0, 4, 3),\n  ('Водопады Руфабго', 'Адыгея', 6.0, 1, 1),\n  ('Хребет Каменное море', 'Лаго-Наки', 12.0, 3, 1),\n  ('Оштен — Фишт', 'Лаго-Наки', 67.0, 5, 6);\n",
+  "sql_checks": [
+    {
+      "name": "Нужные маршруты в нужном порядке",
+      "type": "same_result",
+      "order_matters": true,
+      "message": "Результат не совпадает с ожидаемым"
+    },
+    {
+      "name": "Данные таблицы не изменены",
+      "type": "assert",
+      "sql": "SELECT count(*) = 8 AND sum(difficulty) = 25 FROM routes",
+      "message": "Запрос изменил таблицу routes — нужен только SELECT"
+    }
+  ],
+  "hints": [
+    "Выберите только два столбца: SELECT name, length_km.",
+    "Отфильтруйте сложность условием WHERE difficulty >= 4.",
+    "Порядок «от длинного к короткому» — ORDER BY length_km DESC."
+  ],
+  "fragment_titles": []
+}

@@ -246,6 +246,7 @@ export function TaskEditorPage() {
         )}
       </header>
 
+      {task.editing.proposal && <ProposalPanel task={task} dirty={dirty} onResolved={accept} />}
       {task.editing.check_report && !queued && <CheckReportView report={task.editing.check_report} stale={stale} />}
       <ReferenceReview taskId={task.id} specKey={`${task.editing.number}:${JSON.stringify(task.editing.spec)}`} dirty={dirty} editable={editable} onJump={jumpTo} onChange={loaded.reload} />
 
@@ -541,5 +542,70 @@ function SqlChecksEditor({ spec, editable, taskId, onChange }: { spec: TaskSpec;
         )}
       </div>
     </div>
+  )
+}
+
+const PROPOSAL_LABEL = { statement: 'Условие', starter: 'Стартовый код', hints: 'Подсказки' } as const
+
+/** Claude, исправляя эталон по замечаниям Ревьюера, сам меняет только эталон и тесты. Условие, стартовый код
+ *  и подсказки — то, что видит ученик и по чему судит Ревьюер: их правку применяет только админ. */
+function ProposalPanel({ task, dirty, onResolved }: { task: AdminTask; dirty: boolean; onResolved: (t: AdminTask) => void }) {
+  const [busy, setBusy] = useState<'accept' | 'reject' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const proposal = task.editing.proposal!
+  const spec = task.editing.spec
+  const resolve = async (accept: boolean) => {
+    setBusy(accept ? 'accept' : 'reject')
+    setError(null)
+    try {
+      onResolved(await workshopTasksApi.proposal(task.id, accept))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Не получилось')
+    } finally {
+      setBusy(null)
+    }
+  }
+  const pairs: { label: string; before: string; after: string }[] = []
+  if (proposal.fields.statement !== undefined) pairs.push({ label: PROPOSAL_LABEL.statement, before: spec.statement, after: proposal.fields.statement })
+  if (proposal.fields.hints !== undefined) pairs.push({ label: PROPOSAL_LABEL.hints, before: spec.hints.join('\n\n'), after: proposal.fields.hints.join('\n\n') })
+  for (const [file, code] of Object.entries(proposal.fields.starter ?? {})) {
+    if ((spec.starter[file] ?? '') !== code) pairs.push({ label: `${PROPOSAL_LABEL.starter}: ${file}`, before: spec.starter[file] ?? '', after: code })
+  }
+  return (
+    <section className="panel flex flex-col gap-4 border-ai/40 p-5" aria-labelledby="proposal-title">
+      <div className="flex flex-col gap-1">
+        <h2 id="proposal-title" className="font-semibold">
+          Claude предлагает изменить задание
+        </h2>
+        <p className="text-sm text-muted">
+          Исправляя эталон по замечаниям Ревьюера, Claude решил, что без этой правки не обойтись: {proposal.note}. Сам он её не применил — условие нельзя подгонять под
+          код без вас. Пока правка не принята или не отклонена, задание не публикуется.
+        </p>
+      </div>
+      {pairs.map((p) => (
+        <div key={p.label} className="flex flex-col gap-1.5">
+          <p className="text-sm font-medium">{p.label}</p>
+          <div className="grid gap-2 lg:grid-cols-2">
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-bg/60 p-3 font-mono text-[12.5px]" aria-label="Было">
+              <span className="mb-1 block font-sans text-xs text-faint">Было</span>
+              {p.before || '—'}
+            </pre>
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-ai/40 bg-ai-soft/30 p-3 font-mono text-[12.5px]" aria-label="Станет">
+              <span className="mb-1 block font-sans text-xs text-ai">Станет</span>
+              {p.after || '—'}
+            </pre>
+          </div>
+        </div>
+      ))}
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={() => resolve(true)} loading={busy === 'accept'} disabled={dirty || busy !== null} title={dirty ? 'Сначала сохраните задание' : undefined}>
+          Принять правку
+        </Button>
+        <Button variant="ghost" onClick={() => resolve(false)} loading={busy === 'reject'} disabled={dirty || busy !== null}>
+          Отклонить
+        </Button>
+      </div>
+    </section>
   )
 }

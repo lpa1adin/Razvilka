@@ -114,6 +114,7 @@ class TaskVersionOut(BaseModel):
     check_status: CheckStatus
     check_report: dict | None
     check_is_current: bool  # проверяли именно этот текст задания, а не более раннюю правку
+    proposal: dict | None = None  # {fields: {statement|starter|hints: новое значение}, note}
     change_note: str
     created_at: datetime
     updated_at: datetime

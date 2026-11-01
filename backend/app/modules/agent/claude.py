@@ -220,6 +220,7 @@ def run_structured(
     on_usage: Callable[[dict[str, int]], None] | None = None,
     library: bool = True,
     should_stop: Callable[[], bool] | None = None,
+    model: str | None = None,
 ) -> M:
     """Задача с ответом по схеме. on_progress получает короткие описания шагов: «читает src/app.js».
     should_stop проверяется на каждом сообщении агента: True — вызов прерывается (Stopped), Claude
@@ -237,6 +238,8 @@ def run_structured(
         system, cwd=cwd, effort=effort, max_turns=max_turns, library=library,
         output_format={"type": "json_schema", "schema": schema.model_json_schema()},
     )
+    if model:
+        options.model = model
     result = _run(purpose, _consume(purpose, prompt, options, on_event))
     if on_usage:
         on_usage(tokens(result.usage))

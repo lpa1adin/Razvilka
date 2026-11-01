@@ -43,6 +43,7 @@ def version_out(version: TaskVersion) -> TaskVersionOut:
         status=version.status,
         spec=TaskSpec.model_validate(version.spec),
         check_status=version.check_status,
+        proposal=version.proposal,
         check_report=version.check_report,
         check_is_current=version.checked_hash == spec_hash(version.spec),
         change_note=version.change_note,
@@ -127,7 +128,25 @@ def publish_problems(db: Session, version: TaskVersion) -> list[str]:
         problems.append("Автопроверка не пройдена: нажмите «Проверить задание» и дождитесь результата.")
     elif version.checked_hash != spec_hash(version.spec):
         problems.append("Задание изменилось после автопроверки — запустите её ещё раз.")
+    if version.proposal:
+        problems.append("Claude предложил изменить условие или стартовый код — примите или отклоните правку в редакторе задания.")
     return problems
+
+
+PROPOSABLE = ("statement", "starter", "hints")
+
+
+def resolve_proposal(db: Session, task: Task, accept: bool) -> None:
+    """Админ принимает или отклоняет правку, предложенную при исправлении эталона по замечаниям Ревьюера."""
+    version = get_version(db, task.id, task.draft_version)
+    if version is None or not version.proposal:
+        raise TaskError("Предложенной правки нет")
+    if accept:
+        version.spec = {**version.spec, **{k: v for k, v in version.proposal["fields"].items() if k in PROPOSABLE}}
+    version.proposal = None
+    db.commit()
+    if accept:
+        request_check(db, task)
 
 
 def publish(db: Session, task: Task, change_note: str) -> None:

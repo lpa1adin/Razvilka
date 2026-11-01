@@ -365,7 +365,8 @@ def test_reviewer_findings_fixed_automatically(admin_client, projects, fake_clau
     """Эталон с замечаниями Ревьюера: Claude правит его сам, runner перепроверяет, повторное ревью чистое."""
     monkeypatch.setattr(pipeline, "_wait_checks", pass_checks)
     fragment = make_fragment("Семантика HTML", "header nav main")
-    reviews = iter([ModelReport.model_validate({"findings": [major_finding()]}), ModelReport(findings=[])])
+    # основной Ревьюер: замечание → после исправления чисто; второй взгляд (другая модель) — тоже чисто
+    reviews = iter([ModelReport.model_validate({"findings": [major_finding()]}), ModelReport(findings=[]), ModelReport(findings=[])])
     fake_claude.answers.update(plan=fake_plan(fragment), draft=fake_lesson(fragment), fix=fixed_task())
     original = claude.run_structured
 
@@ -388,7 +389,7 @@ def test_reviewer_findings_fixed_automatically(admin_client, projects, fake_clau
     lesson = out["lessons"][0]
     assert lesson["task"]["review_verdict"] == "pass", lesson
     assert any("исправлен автоматически" in n and "замечаний нет" in n for n in lesson["notes"])
-    assert [c["purpose"] for c in fake_claude].count("review") == 2
+    assert [c["purpose"] for c in fake_claude].count("review") == 3
     draft_call = next(c for c in fake_claude if c["purpose"] == "draft")
     assert "COR-01" in draft_call["prompt"]  # правила Ревьюера наставник видит заранее
     task = admin_client.get(f"/api/workshop/tasks/{lesson['task']['id']}").json()
@@ -471,3 +472,81 @@ def test_quiz_bank_topup(admin_client, fake_claude):
         assert db.get(QuizTopic, topic_id).size == 5
     prompt = next(c["prompt"] for c in fake_claude if c["purpose"] == "draft")
     assert "Допиши 19 новых" in prompt and lesson.questions[0].prompt[:30] in prompt
+
+
+
+def test_reference_review_covers_tests_and_second_model(admin_client, projects, fake_claude, monkeypatch):
+    """Ревьюер видит и автотесты; эталон без серьёзных замечаний отдельно смотрит вторая модель."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(pipeline, "_wait_checks", pass_checks)
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    fake_claude.answers.update(plan=fake_plan(fragment), draft=fake_lesson(fragment))
+    calls = []
+    original = claude.run_structured
+
+    def reviewers(purpose, prompt, system, schema, **kwargs):
+        if purpose != "review":
+            return original(purpose, prompt, system, schema, **kwargs)
+        calls.append({"model": kwargs.get("model"), "prompt": prompt, "system": system})
+        if kwargs.get("model"):  # второй взгляд нашёл слабый тест
+            return ModelReport.model_validate({"findings": [{**major_finding("tests.js"), "rule": "TEST-02", "problem": "Нет проверки на 375 px"}]})
+        return ModelReport(findings=[])
+
+    monkeypatch.setattr(claude, "run_structured", reviewers)
+    fake_claude.answers["fix"] = fixed_task()
+    req = admin_client.post("/api/workshop/generate/requests", json={"what": "course", "project": "fisht-trails"}).json()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/plan")
+    run_jobs()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/draft")
+    run_jobs()
+    first = calls[0]
+    assert "=== tests.js ===" in first["prompt"] and "Есть логотип" in first["prompt"]  # тесты на ревью
+    assert "TEST-02" in first["system"] and "cheatsheetseries.owasp.org" in first["system"]  # правила с источниками
+    assert calls[1]["model"] == settings.reviewer_second_model
+    lesson = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()["lessons"][0]
+    review = admin_client.get(f"/api/workshop/tasks/{lesson['task']['id']}/review").json()
+    assert review["second_opinion"] is True
+    flagged = [f for f in review["findings"] if f["by"] == "второй взгляд"]
+    assert review["verdict"] == "changes_requested" or flagged == []  # второй взгляд — полноценное замечание
+    with SessionLocal() as db:
+        from app.modules.review.models import Review
+        first_review = db.scalars(select(Review).where(Review.task_id == lesson["task"]["id"]).order_by(Review.id)).first()
+        found = [f for f in first_review.findings if f["by"] == "второй взгляд"]
+        assert found and found[0]["file"] == "tests.js" and found[0]["source"].startswith("[Software Engineering at Google")
+        assert first_review.verdict == "changes_requested"
+
+
+def test_fix_cannot_rewrite_statement_or_drop_tests(admin_client, projects, fake_claude, monkeypatch):
+    """Исправляя эталон, Claude меняет только эталон и тесты; правка условия ждёт админа, удалить тест нельзя."""
+    monkeypatch.setattr(pipeline, "_wait_checks", pass_checks)
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    rewritten = fixed_task()
+    rewritten.task.statement = "Сделайте шапку — теперь можно и без логотипа"
+    rewritten.task.tests += "\ntest('Есть меню', () => { expect(true, '') })"
+    reviews = iter([ModelReport.model_validate({"findings": [major_finding()]}), ModelReport(findings=[]), ModelReport(findings=[])])
+    fake_claude.answers.update(plan=fake_plan(fragment), draft=fake_lesson(fragment), fix=rewritten)
+    original = claude.run_structured
+    monkeypatch.setattr(claude, "run_structured", lambda purpose, *a, **k: next(reviews) if purpose == "review" else original(purpose, *a, **k))
+
+    req = admin_client.post("/api/workshop/generate/requests", json={"what": "course", "project": "fisht-trails"}).json()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/plan")
+    run_jobs()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/draft")
+    run_jobs()
+    lesson = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()["lessons"][0]
+    assert any("предложил изменить условие" in n for n in lesson["notes"])
+    tid = lesson["task"]["id"]
+    task = admin_client.get(f"/api/workshop/tasks/{tid}").json()["editing"]
+    assert task["spec"]["statement"] == "Сделайте шапку с логотипом"  # условие не тронуто
+    assert "исправлено" in task["spec"]["solution"]["index.html"] and "Есть меню" in task["spec"]["tests"]
+    assert task["proposal"]["fields"] == {"statement": "Сделайте шапку — теперь можно и без логотипа"}
+    blocked = admin_client.post(f"/api/workshop/tasks/{tid}/publish", json={"change_note": ""})
+    assert blocked.status_code == 422 and any("примите или отклоните" in p for p in blocked.json()["problems"]), blocked.text
+    accepted = admin_client.post(f"/api/workshop/tasks/{tid}/proposal", json={"accept": True}).json()["editing"]
+    assert accepted["spec"]["statement"].endswith("без логотипа") and accepted["proposal"] is None
+    assert accepted["check_status"] == "queued"  # после принятой правки задание проверяется заново
+
+    # Тест удалить нельзя: исправление отклоняется целиком
+    from app.modules.generation.pipeline import _test_names
+    assert _test_names("def test_a():\n  pass") - _test_names("def test_b():\n  pass") == {"test_a"}

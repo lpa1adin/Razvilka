@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.modules.agent import claude
 from app.modules.auth.models import User
 from app.modules.jobs.queue import enqueue, has_pending
@@ -44,7 +45,8 @@ def parse_rules(markdown: str) -> list[Rule]:
         if block.startswith("### "):
             group = block[4:].splitlines()[0].strip()
         elif m := re.match(r"- \*\*([A-Z]+-\d+)\*\* (.+)", block, re.S):
-            rules.append(Rule(id=m.group(1), group=group, text=re.sub(r"\s+", " ", m.group(2)).strip()))
+            text, _, source = re.sub(r"\s+", " ", m.group(2)).strip().partition(" Источник: ")
+            rules.append(Rule(id=m.group(1), group=group, text=text.strip(), source=source.strip().rstrip(".")))
     return rules
 
 
@@ -87,7 +89,7 @@ def rules_markdown(rules: list[dict]) -> str:
         if r["group"] != group:
             group = r["group"]
             out.append(f"\n### {group}")
-        out.append(f"- **{r['id']}** {r['text']}")
+        out.append(f"- **{r['id']}** {r['text']}" + (f" Источник: {r['source']}." if r.get("source") else ""))
     return "\n".join(out).strip()
 
 
@@ -113,9 +115,13 @@ KIND_NOTE = {
     ),
     ReviewKind.reference: (
         "Это ЭТАЛОННОЕ решение задания: по нему будут учиться. Эталон не должен учить плохому — "
-        "любая плохая практика здесь как минимум major."
+        "любая плохая практика здесь как минимум major. Файл tests.* (у SQL — checks.txt) — автотесты задания: проверь по TEST-02, что они "
+        "проверяют каждый критерий условия и граничные случаи и упадут на неверном решении."
     ),
 }
+
+
+SECOND_LABEL = "второй взгляд"
 
 
 def build_prompt(review: Review, rules: list[dict]) -> tuple[str, str]:
@@ -151,7 +157,9 @@ def _validate(review: Review, report: ModelReport, rules: list[dict]) -> tuple[l
         kept.append(Finding(
             rule=f.rule, rule_text=known[f.rule]["text"], severity=f.severity, file=f.file,
             line=f.line if 1 <= f.line <= max(count, 1) else None,
-            problem=f.problem, scenario=f.scenario, fix_hint=f.fix_hint, source=f.source,
+            problem=f.problem, scenario=f.scenario, fix_hint=f.fix_hint,
+            # Источник берём из правила (проверен вручную), а не со слов модели
+            source=known[f.rule].get("source") or f.source,
         ).model_dump())
     order = {"blocker": 0, "major": 1, "minor": 2}
     kept.sort(key=lambda x: (order[x["severity"]], x["file"], x["line"] or 0))
@@ -167,19 +175,34 @@ def run(db: Session, review_id: int) -> dict:
     db.commit()
     system, prompt = build_prompt(review, rules)
     usage: dict[str, int] = {}
+    second: dict | None = None
     try:
         report = claude.run_structured(
             "review", prompt, system, ModelReport, effort="high", max_turns=4, library=False, on_usage=usage.update,
         )
+        findings, dropped = _validate(review, report, rules)
+        # Эталон чистый, только если его отдельно пропустила и другая модель: у неё другие слепые пятна
+        if review.kind is ReviewKind.reference and not any(f["severity"] in BLOCKING for f in findings):
+            second = {"model": settings.reviewer_second_model}
+            report2 = claude.run_structured(
+                "review", prompt, system, ModelReport, effort="high", max_turns=4, library=False,
+                on_usage=second.update, model=settings.reviewer_second_model,
+            )
+            more, dropped2 = _validate(review, report2, rules)
+            seen = {(f["rule"], f["file"], f["line"]) for f in findings}
+            findings += [{**f, "by": SECOND_LABEL} for f in more if (f["rule"], f["file"], f["line"]) not in seen]
+            dropped += dropped2
+            order = {"blocker": 0, "major": 1, "minor": 2}
+            findings.sort(key=lambda x: (order[x["severity"]], x["file"], x["line"] or 0))
     except claude.AgentUnavailable as exc:
         review.status = ReviewStatus.failed
         review.error = str(exc)
         review.finished_at = datetime.now(UTC)
         db.commit()
         return {"error": str(exc)}
-    review.findings, review.dropped = _validate(review, report, rules)
+    review.findings, review.dropped = findings, dropped
     review.verdict = "changes_requested" if any(f["severity"] in BLOCKING for f in review.findings) else "pass"
-    review.tokens = usage
+    review.tokens = {**usage, "second": second} if second is not None else usage
     review.status = ReviewStatus.done
     review.finished_at = datetime.now(UTC)
     db.commit()
@@ -243,6 +266,16 @@ def request_reference(db: Session, admin: User, task: Task, enqueue_job: bool = 
     files = {name: code for name, code in spec.solution.items() if code.strip()} or spec.solution
     if spec.kind == "sql":
         files = {"schema.sql": spec.sql_setup, **files}
+        if spec.sql_checks:
+            # У SQL-заданий автотесты — список проверок; Ревьюер видит их как файл, чтобы судить по TEST-02
+            files["checks.txt"] = "\n\n".join(
+                f"-- Проверка {i}: {c.name} ({'результат совпадает с эталоном' if c.type == 'same_result' else 'запрос после решения вернёт истину'}"
+                f"{', порядок строк важен' if c.order_matters else ''})\n{c.sql.strip()}" + (f"\n-- Сообщение ученику: {c.message}" if c.message else "")
+                for i, c in enumerate(spec.sql_checks, 1)
+            )
+    elif spec.tests.strip():
+        # Тесты тоже на ревью (TEST-02): слабые тесты пропустят и неверный эталон
+        files = {**files, f"tests.{'js' if spec.kind == 'web' else 'py'}": spec.tests}
     review = _new(
         db, ReviewKind.reference, admin, spec.title, spec.statement, files,
         task_id=task.id, task_version=version.number, spec_hash=spec_hash(version.spec),
@@ -296,6 +329,7 @@ def to_out(db: Session, review: Review) -> ReviewOut:
         task_version=review.task_version, rules_version=review.rules_version, verdict=review.verdict,
         findings=[Finding.model_validate(f) for f in review.findings], counts=counts(review), dropped=len(review.dropped),
         files=review.files, error=review.error, accepted=bool(review.accepted_by), accepted_note=review.accepted_note,
+        second_opinion=bool((review.tokens or {}).get("second")),
         created_at=review.created_at, finished_at=review.finished_at,
     )
 

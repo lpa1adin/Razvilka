@@ -12,6 +12,7 @@ export type Finding = {
   scenario: string
   fix_hint: string
   source: string
+  by?: string
 }
 
 export type Review = {
@@ -26,6 +27,7 @@ export type Review = {
   findings: Finding[]
   counts: Record<Severity, number>
   dropped: number
+  second_opinion: boolean
   files: Record<string, string>
   error: string | null
   accepted: boolean
@@ -38,7 +40,7 @@ export type FixState = { running: boolean; error: string | null; notes: string[]
 
 export type ReviewCard = Pick<Review, 'id' | 'kind' | 'status' | 'title' | 'task_slug' | 'verdict' | 'counts' | 'created_at'>
 
-export type Rule = { id: string; group: string; text: string; enabled: boolean }
+export type Rule = { id: string; group: string; text: string; enabled: boolean; source?: string }
 export type RuleSet = { version: number; rules: Rule[]; note: string; created_at: string; author: string | null }
 
 export const SEVERITY: Record<Severity, { label: string; tone: 'danger' | 'ai' | 'muted' }> = {

@@ -8,6 +8,7 @@ import { Glider } from '@/components/ui/Glider'
 import { Badge, ErrorBlock, PageHeader, Skeleton } from '@/components/ui/States'
 import { AssignmentsTab, ReferencesTab, RubricTab, SubmissionsTab } from '@/features/assess/WorkshopTabs'
 import { reviewApi, type Rule } from '@/features/review/api'
+import { Sources } from '@/features/review/ReviewReport'
 import { ApiError } from '@/lib/api'
 import { useApi } from '@/lib/useApi'
 
@@ -119,13 +120,24 @@ function ReviewerRules() {
                 <div key={i} className={`flex items-start gap-3 rounded-md px-2 py-2 transition-colors ${r.enabled ? '' : 'opacity-50'}`}>
                   <input type="checkbox" checked={r.enabled} onChange={(e) => set(i, { enabled: e.target.checked })} className="mt-2 size-4 accent-[var(--accent)]" aria-label={`Правило ${r.id} включено`} />
                   <span className="mt-1.5 w-16 shrink-0 font-mono text-xs text-muted">{r.id}</span>
-                  <textarea
-                    value={r.text}
-                    onChange={(e) => set(i, { text: e.target.value })}
-                    rows={Math.max(1, Math.ceil(r.text.length / 90))}
-                    aria-label={`Текст правила ${r.id}`}
-                    className={`${inputClass} min-h-9 flex-1 resize-y py-1.5 text-sm leading-snug`}
-                  />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <textarea
+                      value={r.text}
+                      onChange={(e) => set(i, { text: e.target.value })}
+                      rows={Math.max(1, Math.ceil(r.text.length / 90))}
+                      aria-label={`Текст правила ${r.id}`}
+                      className={`${inputClass} min-h-9 resize-y py-1.5 text-sm leading-snug`}
+                    />
+                    <p className="px-1 text-xs text-faint">
+                      {r.source ? (
+                        <>
+                          Источник: <Sources text={r.source} />
+                        </>
+                      ) : (
+                        'Источник не указан — правило платформы'
+                      )}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setRules((list) => list.filter((_, j) => j !== i))}

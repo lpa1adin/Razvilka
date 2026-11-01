@@ -27,7 +27,7 @@ class SourceSpec:
     license_file: str
     # строка, которая обязана быть в файле лицензии; нет её — значит, лицензию поменяли
     license_marker: str
-    parser: str  # mdn | jsinfo
+    parser: str  # mdn | jsinfo | owasp | pydocs
 
 
 SOURCES: dict[str, SourceSpec] = {
@@ -81,6 +81,44 @@ SOURCES: dict[str, SourceSpec] = {
             license_file="LICENSE.md",
             license_marker="CC-BY-NC",
             parser="jsinfo",
+        ),
+        SourceSpec(
+            slug="owasp-cheatsheets",
+            title="OWASP Cheat Sheet Series",
+            author="OWASP Foundation и участники",
+            kind="docs",
+            homepage="https://cheatsheetseries.owasp.org/",
+            license_name="CC BY-SA 4.0",
+            license_url="https://creativecommons.org/licenses/by-sa/4.0/deed.ru",
+            license_mode=LicenseMode.full_text,
+            license_note=(
+                "Текст показан полностью, на английском, с указанием авторов. Изменения: ссылки на соседние шпаргалки "
+                "ведут на сайт OWASP. Адаптация распространяется на тех же условиях (CC BY-SA 4.0)."
+            ),
+            repo="https://github.com/OWASP/CheatSheetSeries",
+            patterns=("/LICENSE.md", "/cheatsheets/*.md"),
+            license_file="LICENSE.md",
+            license_marker="Attribution-ShareAlike 4.0",
+            parser="owasp",
+        ),
+        SourceSpec(
+            slug="python-docs",
+            title="Документация Python (docs.python.org)",
+            author="Python Software Foundation",
+            kind="docs",
+            homepage="https://docs.python.org/3/",
+            license_name="PSF License Version 2 (примеры кода — Zero-Clause BSD)",
+            license_url="https://docs.python.org/3/license.html",
+            license_mode=LicenseMode.full_text,
+            license_note=(
+                "Официальная документация Python, на английском, текст полностью. Изменения: роли и директивы Sphinx "
+                "заменены обычным текстом и блоками кода, служебные индексы убраны. © Python Software Foundation."
+            ),
+            repo="https://github.com/python/cpython",
+            patterns=("/LICENSE", "/Doc/tutorial/*.rst", "/Doc/library/*.rst", "/Doc/howto/*.rst"),
+            license_file="LICENSE",
+            license_marker="Python Software Foundation License Version 2",
+            parser="pydocs",
         ),
     )
 }

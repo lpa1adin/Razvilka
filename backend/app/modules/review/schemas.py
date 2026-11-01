@@ -15,6 +15,8 @@ class Rule(BaseModel):
     group: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=1000)]
     enabled: bool = True
+    # Откуда правило: markdown-ссылки на OWASP, MDN, WCAG, PEP 8… Ссылку на источник даёт платформа, а не модель
+    source: Annotated[str, StringConstraints(strip_whitespace=True, max_length=800)] = ""
 
 
 class RulesIn(BaseModel):
@@ -58,6 +60,7 @@ class Finding(BaseModel):
     scenario: str
     fix_hint: str
     source: str
+    by: str = ""  # какая модель нашла: основной Ревьюер или второй взгляд
 
 
 # ---------- API ----------
@@ -84,6 +87,7 @@ class ReviewOut(BaseModel):
     findings: list[Finding]
     counts: dict[str, int]
     dropped: int
+    second_opinion: bool = False  # эталон дополнительно проверила вторая модель
     files: dict[str, str]
     error: str | None
     accepted: bool

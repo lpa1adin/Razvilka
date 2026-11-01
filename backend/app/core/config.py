@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     # Claude (ADR-007): модель наставника и папка с проектами владельца (смонтирована только на чтение).
     # Токен подписки читается самим Agent SDK из CLAUDE_CODE_OAUTH_TOKEN — в настройках его нет.
     agent_model: str = "claude-opus-5-5"
+    # Второй взгляд на эталоны: другая модель — другие слепые пятна (ADR-025)
+    reviewer_second_model: str = "claude-sonnet-5-5"
     projects_root: str = "/projects"
     # Рабочие папки путей «напиши заново сам»: <login>/<путь>. Ученик пишет в них в своём редакторе
     workspace_root: str = "/workspace"

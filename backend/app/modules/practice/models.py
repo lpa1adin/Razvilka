@@ -43,6 +43,8 @@ class TaskVersion(Base):
     check_status: Mapped[CheckStatus] = mapped_column(Enum(CheckStatus, name="task_check_status"), default=CheckStatus.not_checked)
     check_report: Mapped[dict | None] = mapped_column(JSONB)
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # хэш spec, который проверяли
+    # Правка условия/стартового кода/подсказок, которую предложил Claude при исправлении эталона: ждёт админа
+    proposal: Mapped[dict | None] = mapped_column(JSONB)
     change_note: Mapped[str] = mapped_column(String(1500), default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

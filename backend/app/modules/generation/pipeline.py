@@ -5,6 +5,7 @@
 """
 
 import logging
+import re
 import time
 from datetime import UTC, datetime
 
@@ -523,6 +524,14 @@ def _paused(db: Session, request_id: int, payload: dict) -> dict:
 # ---------- Эталон по замечаниям Ревьюера ----------
 
 FIX_ROUNDS = 2
+PROPOSAL_LABELS = {"statement": "условие", "starter": "стартовый код", "hints": "подсказки"}
+
+
+def _test_names(tests: str) -> set[str]:
+    """Имена тестов: def test_x (Python) и test('Название', …) (веб)."""
+    python = re.findall(r"^\s*def (test_\w+)", tests, re.M)
+    web = [name for _, name in re.findall(r"\btest\(\s*(['\"`])(.+?)\1", tests)]
+    return set(python) | set(web)
 
 
 def _serious(review) -> list[dict]:
@@ -539,17 +548,24 @@ def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=No
         if review.status.value != "done" or review.verdict != "changes_requested" or not findings:
             break
         version = practice.editing_version(db, task)
-        saved = {k: getattr(version, k) for k in ("spec", "check_status", "check_report", "checked_hash")}
+        saved = {k: getattr(version, k) for k in ("spec", "check_status", "check_report", "checked_hash", "proposal")}
         try:
             system, prompt = prompts.review_fix_prompt({k: v for k, v in version.spec.items() if k != "fragment_ids"}, review.findings, rules)
             fix = claude.run_structured("fix", prompt, system, TaskFix, effort="high", max_turns=20, should_stop=stop)
-            spec = _spec(fix.task, version.spec.get("fragment_ids", []))
-            if spec.kind != version.spec["kind"]:
+            spec = _spec(fix.task, version.spec.get("fragment_ids", [])).model_dump()
+            if spec["kind"] != version.spec["kind"]:
                 raise ValueError("Claude поменял вид задания")
+            if lost := _test_names(version.spec["tests"]) - _test_names(spec["tests"]):
+                raise ValueError(f"Claude убрал тесты ({', '.join(sorted(lost))}) — тесты можно только добавлять и уточнять")
         except (claude.AgentUnavailable, ValidationError, ValueError) as exc:
             notes.append(f"Исправить эталон по замечаниям Ревьюера не удалось: {str(exc)[:200]}")
             break
-        version.spec = spec.model_dump()
+        # Сам Claude меняет только эталон и тесты. Условие, стартовый код и подсказки — то, по чему судит Ревьюер
+        # и что видит ученик: их правка ждёт админа, иначе условие можно подогнать под код
+        changed = {k: spec[k] for k in practice.PROPOSABLE if spec[k] != version.spec[k]}
+        version.spec = {**version.spec, "solution": spec["solution"], "tests": spec["tests"]}
+        if changed:
+            version.proposal = {"fields": {**(version.proposal or {}).get("fields", {}), **changed}, "note": fix.note}
         db.commit()
         practice.request_check(db, task)
         wait(db, [task.id])
@@ -560,6 +576,9 @@ def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=No
             db.commit()
             notes.append("Исправление по замечаниям Ревьюера сломало автотесты — эталон возвращён к прежней редакции.")
             break
+        if changed:
+            notes.append("Claude предложил изменить " + ", ".join(PROPOSAL_LABELS[k] for k in changed)
+                         + " — правка ждёт вас в редакторе задания и не применена.")
         before = len(findings)
         review = review_service.request_reference(db, admin, task, enqueue_job=False)
         review_service.run(db, review.id)

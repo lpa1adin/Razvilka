@@ -62,7 +62,7 @@ def run_queue():
 def test_default_rules_come_from_reviewer_md(admin_client):
     rules = admin_client.get("/api/workshop/review-rules").json()
     ids = [r["id"] for r in rules["rules"]]
-    assert rules["version"] == 1 and len(ids) == 23 and ids[0] == "TASK-01" and "SEC-03" in ids
+    assert rules["version"] == 1 and len(ids) == 24 and ids[0] == "TASK-01" and "SEC-03" in ids
     assert {r["group"] for r in rules["rules"]} >= {"SEC — безопасность", "WEB — фронтенд (для HTML/CSS/JS)"}
 
 
@@ -155,3 +155,24 @@ def test_agent_export(admin_client):
     text = md.text
     assert text.startswith("---\nname: reviewer\n") and "tools: Read, Grep, Glob" in text
     assert "**SEC-03**" in text and '"verdict": "pass | changes_requested"' in text
+
+
+def test_sql_reference_review_sees_checks(admin_client):
+    """У SQL-задания автотесты — список проверок: Ревьюер получает их файлом checks.txt (TEST-02)."""
+    from app.core.db import SessionLocal
+    from app.modules.auth.models import User
+    from app.modules.practice import service as practice
+    from app.modules.practice.schemas import TaskSpec
+    from app.modules.review import service as rs
+
+    spec = TaskSpec.model_validate({
+        "title": "Маршруты", "kind": "sql", "statement": "Выведите сложные маршруты",
+        "sql_setup": "CREATE TABLE routes (id int, level int);", "solution": {"query.sql": "SELECT id FROM routes WHERE level > 2;"},
+        "sql_checks": [{"name": "Только сложные", "sql": "SELECT id FROM routes WHERE level > 2", "message": "Нужны маршруты сложнее 2"}],
+    })
+    with SessionLocal() as db:
+        admin = db.query(User).filter(User.login == "admin").one_or_none() or db.query(User).first()
+        task = practice.create_task(db, "Маршруты", "sql", admin, spec)
+        review = rs.request_reference(db, admin, task, enqueue_job=False)
+        assert set(review.files) == {"schema.sql", "query.sql", "checks.txt"}
+        assert "Проверка 1: Только сложные" in review.files["checks.txt"] and "level > 2" in review.files["checks.txt"]

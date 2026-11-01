@@ -105,11 +105,23 @@ def collect_articles(spec: SourceSpec, repo_dir: Path, commit: str) -> list[pars
             article = parsers.parse_jsinfo(path, file.read_text(encoding="utf-8"))
             if article:
                 articles.append(article)
+    elif spec.parser == "owasp":
+        raw_base = f"https://raw.githubusercontent.com/OWASP/CheatSheetSeries/{commit}/"
+        for file in sorted(repo_dir.glob("cheatsheets/*.md")):
+            article = parsers.parse_owasp(file.relative_to(repo_dir).as_posix(), file.read_text(encoding="utf-8"), raw_base)
+            if article:
+                articles.append(article)
+    elif spec.parser == "pydocs":
+        for file in sorted(repo_dir.glob("Doc/*/*.rst")):
+            article = parsers.parse_pydocs(file.relative_to(repo_dir).as_posix(), file.read_text(encoding="utf-8"))
+            if article:
+                articles.append(article)
+                section_titles.setdefault(article.parent_key, article.section)
     else:
         raise ValueError(f"Нет парсера {spec.parser!r}")
 
     for article in articles:
-        article.section = section_titles.get(article.parent_key, "")
+        article.section = section_titles.get(article.parent_key, article.section)
     return articles
 
 

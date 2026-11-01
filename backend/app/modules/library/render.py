@@ -25,7 +25,11 @@ _ATTRS = {
 
 
 def render_markdown(text: str) -> str:
-    raw = _md.render(text)
+    return sanitize_html(_md.render(text))
+
+
+def sanitize_html(raw: str) -> str:
+    """Любой HTML источника → разрешённые теги и атрибуты; скрипты и стили вырезаются вместе с содержимым."""
     # h1 у статьи — это заголовок страницы платформы; внутри текста поднимаем всё на уровень ниже
     raw = re.sub(r"<(/?)h1>", r"<\1h2>", raw)
     clean = nh3.clean(
@@ -61,4 +65,14 @@ def markdown_outline(text: str, levels: tuple[int, ...] = (2, 3)) -> list[dict]:
             title = html_to_text(_md.renderInline(tokens[i + 1].content))
             if title:
                 outline.append({"level": int(token.tag[1]), "title": title})
+    return outline
+
+
+def html_outline(fragment_html: str, levels: tuple[int, ...] = (2, 3)) -> list[dict]:
+    """Оглавление по заголовкам уже очищенного HTML (для источников не в Markdown)."""
+    outline = []
+    for level, inner in re.findall(r"<h([2-6])[^>]*>(.*?)</h\1>", fragment_html, re.S):
+        title = html_to_text(inner)
+        if int(level) in levels and title:
+            outline.append({"level": int(level), "title": title})
     return outline

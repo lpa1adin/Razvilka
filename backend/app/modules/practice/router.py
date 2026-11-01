@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.modules.auth.deps import AdminUser, CurrentUser, Db
@@ -170,6 +171,21 @@ def admin_check(task_id: int, db: Db, _: AdminUser):
     task = _admin_task(db, task_id)
     try:
         service.request_check(db, task)
+    except service.TaskError as exc:
+        raise _conflict(exc) from exc
+    return _out(db, task)
+
+
+class ProposalIn(BaseModel):
+    accept: bool
+
+
+@admin_router.post("/{task_id}/proposal", response_model=AdminTaskOut)
+def admin_proposal(task_id: int, payload: ProposalIn, db: Db, _: AdminUser):
+    """Правка условия, стартового кода или подсказок, которую Claude предложил при исправлении эталона."""
+    task = _admin_task(db, task_id)
+    try:
+        service.resolve_proposal(db, task, payload.accept)
     except service.TaskError as exc:
         raise _conflict(exc) from exc
     return _out(db, task)

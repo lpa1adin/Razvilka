@@ -102,6 +102,8 @@ export type AdminTask = {
     check_status: CheckStatus
     check_report: CheckReport | null
     check_is_current: boolean
+    /** правка условия/стартового кода/подсказок от Claude при исправлении эталона — ждёт админа */
+    proposal: { fields: Partial<Pick<TaskSpec, 'statement' | 'starter' | 'hints'>>; note: string } | null
     change_note: string
     created_at: string
     updated_at: string
@@ -129,6 +131,7 @@ export const workshopTasksApi = {
   save: (id: number, number: number, spec: TaskSpec) => api<AdminTask>(`/api/workshop/tasks/${id}/draft`, json('PUT', { number, spec })),
   discard: (id: number) => api<AdminTask>(`/api/workshop/tasks/${id}/draft`, json('DELETE')),
   check: (id: number) => api<AdminTask>(`/api/workshop/tasks/${id}/check`, json('POST')),
+  proposal: (id: number, accept: boolean) => api<AdminTask>(`/api/workshop/tasks/${id}/proposal`, json('POST', { accept })),
   publish: (id: number, change_note: string) => api<AdminTask>(`/api/workshop/tasks/${id}/publish`, json('POST', { change_note })),
   archive: (id: number, archived: boolean) => api<AdminTask>(`/api/workshop/tasks/${id}/archive?archived=${archived}`, json('POST')),
   remove: (id: number) => api<void>(`/api/workshop/tasks/${id}`, json('DELETE')),

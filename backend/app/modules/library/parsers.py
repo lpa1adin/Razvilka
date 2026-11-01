@@ -4,8 +4,10 @@ import re
 from dataclasses import dataclass, field
 
 import yaml
+from docutils.core import publish_parts
+from docutils.parsers.rst import Directive, directives, nodes
 
-from app.modules.library.render import first_paragraph, html_to_text, markdown_outline, render_markdown
+from app.modules.library.render import first_paragraph, html_outline, html_to_text, markdown_outline, render_markdown, sanitize_html
 
 MDN_BASE = "https://developer.mozilla.org/ru/docs/"
 
@@ -179,3 +181,154 @@ def parse_jsinfo(path: str, text: str) -> Article | None:
 
 def jsinfo_section_title(text: str) -> str | None:
     return _jsinfo_title(text)
+
+
+
+# ---------- OWASP Cheat Sheet Series ----------
+
+OWASP_BASE = "https://cheatsheetseries.owasp.org/cheatsheets/"
+
+
+def parse_owasp(path: str, text: str, raw_base: str) -> Article | None:
+    lines = text.splitlines()
+    head = next((i for i, l in enumerate(lines) if l.startswith("# ")), None)
+    if head is None:
+        return None
+    title = lines[head][2:].strip()
+    body = "\n".join(lines[head + 1:])
+    name = path.rsplit("/", 1)[-1].removesuffix(".md")
+    # Ссылки на соседние шпаргалки ведут на сайт OWASP, картинки — в репозиторий
+    body = re.sub(r"\]\((?!https?:|#|mailto:)([\w.-]+)\.md(#[^)]*)?\)", lambda m: f"]({OWASP_BASE}{m.group(1)}.html{m.group(2) or ''})", body)
+    body = re.sub(r"!\[([^\]]*)\]\((?!https?:)(?:\.\./)?([^)\s]+)\)", lambda m: f"![{m.group(1)}]({raw_base}{m.group(2)})", body)
+    content_html = render_markdown(body)
+    return Article(
+        external_id=path,
+        title=title,
+        url=f"{OWASP_BASE}{name}.html",
+        parent_key="cheatsheets",
+        section="OWASP Cheat Sheet Series",
+        content_html=content_html,
+        outline=markdown_outline(body),
+        excerpt=first_paragraph(content_html),
+        plain_text=html_to_text(content_html),
+    )
+
+
+# ---------- Документация Python (reST + директивы Sphinx) ----------
+
+PYDOCS_BASE = "https://docs.python.org/3/"
+PYDOCS_SECTIONS = {"tutorial": "Учебник Python", "library": "Стандартная библиотека", "howto": "Python HOWTO"}
+
+# :func:`json.dumps`, :class:`~pathlib.Path`, :ref:`текст <метка>` — роли Sphinx, которых docutils не знает
+_ROLE = re.compile(r":(?:[\w-]+:)?([\w-]+):`([^`]+)`")
+_PLAIN_ROLES = {"ref", "term", "doc", "pep", "rfc", "abbr", "dfn", "title", "manpage", "gh", "issue", "source"}
+
+
+def _role(match: re.Match) -> str:
+    name, text = match.group(1), match.group(2).strip()
+    if text.endswith(">") and "<" in text:
+        shown = text[: text.rindex("<")].strip()
+        text = shown or text[text.rindex("<") + 1 : -1]
+    text = text.lstrip("!")
+    if text.startswith("~"):
+        text = text[1:].rsplit(".", 1)[-1]
+    if name in ("pep", "rfc"):
+        return f"{name.upper()} {text}"
+    return text if name in _PLAIN_ROLES else f"``{text}``"
+
+
+class _AnyOptions(dict):
+    """Директивы Sphinx бывают с любыми опциями (:noindex:, :module:…) — принимаем все, не разбирая."""
+
+    def __getitem__(self, key):
+        return directives.unchanged
+
+    def __contains__(self, key):
+        return True
+
+
+class _Sphinx(Directive):
+    has_content = True
+    optional_arguments = 1
+    final_argument_whitespace = True
+    option_spec = _AnyOptions()
+    LABELS = {"versionadded": "Добавлено в версии", "versionchanged": "Изменено в версии", "deprecated": "Устарело с версии",
+              "seealso": "См. также", "impl-detail": "Деталь реализации CPython", "availability": "Доступность"}
+    SIGNATURES = {"function", "method", "class", "attribute", "data", "exception", "decorator", "describe", "envvar",
+                  "option", "cmdoption", "opcode", "classmethod", "staticmethod", "property", "coroutinefunction",
+                  "coroutinemethod", "abstractmethod", "decoratormethod", "type"}
+    CODE = {"code-block", "sourcecode", "testcode", "doctest", "testoutput", "productionlist"}
+
+    def run(self):
+        name, arg = self.name, (self.arguments[0] if self.arguments else "")
+        body = nodes.container()
+        if self.content and name not in self.CODE:
+            self.state.nested_parse(self.content, self.content_offset, body)
+        if name in self.CODE:
+            text = "\n".join(self.content) if name != "productionlist" else arg + "\n" + "\n".join(self.content)
+            return [nodes.literal_block(text, text)] if text.strip() else []
+        if name in self.SIGNATURES:
+            arg = re.sub(r"\s*\\\s*", " ", arg)  # длинные сигнатуры переносят строку обратным слэшем
+            head = nodes.paragraph("", "", nodes.strong("", "", nodes.literal(arg, arg)))
+            return [head, nodes.block_quote("", *body.children)]
+        if name in self.LABELS:
+            label = f"{self.LABELS[name]} {arg}".strip() if name not in ("seealso", "impl-detail") else self.LABELS[name]
+            return [nodes.paragraph("", "", nodes.emphasis(label + ".", label + ".")), *body.children]
+        return list(body.children)  # прочее (only, rubric-подобные) — просто содержимое
+
+
+_HIDDEN = ("index", "toctree", "highlight", "currentmodule", "module", "moduleauthor", "sectionauthor", "testsetup",
+           "testcleanup", "tabularcolumns", "audit-event", "audit-event-table", "c:function", "c:macro", "c:type",
+           "c:member", "c:var", "program", "literalinclude", "include", "raw", "miscnews", "limited-api-list")
+
+
+class _Hidden(Directive):
+    has_content = True
+    optional_arguments = 1
+    final_argument_whitespace = True
+    option_spec = _AnyOptions()
+
+    def run(self):
+        return []
+
+
+for _name in (*_Sphinx.SIGNATURES, *_Sphinx.LABELS, *_Sphinx.CODE, "only", "versionremoved", "glossary"):
+    directives.register_directive(_name, _Sphinx)
+for _name in _HIDDEN:
+    directives.register_directive(_name, _Hidden)
+
+_SETTINGS = {
+    "report_level": 5, "halt_level": 5, "file_insertion_enabled": False, "raw_enabled": False,
+    "syntax_highlight": "none", "input_encoding": "unicode", "doctitle_xform": True, "initial_header_level": 2,
+}
+
+
+def parse_pydocs(path: str, text: str) -> Article | None:
+    """Doc/library/json.rst → статья. Роли и директивы Sphinx упрощаются до обычного текста и кода."""
+    rel = path.removeprefix("Doc/").removesuffix(".rst")
+    if rel.endswith("index") or rel.rsplit("/", 1)[-1].startswith("_"):
+        return None
+    source = _ROLE.sub(_role, text).replace("|version|", "3").replace("|release|", "3")
+    try:
+        parts = publish_parts(source, writer="html5", settings_overrides=_SETTINGS)
+    except Exception:  # одна сломанная страница не должна останавливать импорт всей документации
+        return None
+    title = html_to_text(parts.get("title", "")).replace("``", "").strip()
+    if not title:
+        return None
+    raw = parts["body"].replace('<span class="docutils literal">', "<code>")
+    raw = re.sub(r"<code>(.*?)</span>", r"<code>\1</code>", raw, flags=re.S)
+    # Схемы документации лежат рядом с .rst в виде svg — относительные ссылки на них здесь не откроются
+    raw = re.sub(r'<img\b(?![^>]*\bsrc="https?:)[^>]*>', "", raw)
+    content_html = sanitize_html(raw)
+    return Article(
+        external_id=path,
+        title=title,
+        url=f"{PYDOCS_BASE}{rel}.html",
+        parent_key=rel.split("/", 1)[0],
+        section=PYDOCS_SECTIONS.get(rel.split("/", 1)[0], ""),
+        content_html=content_html,
+        outline=html_outline(content_html),
+        excerpt=first_paragraph(content_html),
+        plain_text=html_to_text(content_html),
+    )

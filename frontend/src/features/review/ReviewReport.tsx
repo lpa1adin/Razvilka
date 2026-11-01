@@ -63,6 +63,7 @@ export function ReviewReport({ review, onJump, withCode }: Props) {
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <span>
               Независимая проверка: Ревьюер видел только условие, код и правила v{review.rules_version} — не переписку с наставником и не автора.
+              {review.second_opinion && ' Эталон и тесты отдельно проверила вторая модель (Claude Sonnet) — у неё другие слепые пятна.'}
               {review.dropped > 0 && ` Отброшено замечаний с неверным адресом или правилом: ${review.dropped}.`}
               {review.accepted_note && ` Пояснение админа: ${review.accepted_note}`}
             </span>
@@ -88,6 +89,7 @@ function FindingCard({ finding: f, onJump, code }: { finding: Finding; onJump?: 
         <span className="font-mono text-xs text-muted" title={f.rule_text}>
           {f.rule}
         </span>
+        {f.by && <Badge tone="ai">{f.by}</Badge>}
         {onJump ? (
           <button type="button" onClick={() => onJump(f.file, f.line)} className="font-mono text-xs text-accent hover:underline">
             {address}
@@ -119,7 +121,12 @@ function FindingCard({ finding: f, onJump, code }: { finding: Finding; onJump?: 
       </p>
       <p className="text-xs text-faint">
         Правило {f.rule}: <Inline text={f.rule_text} />
-        {f.source && ` · ${f.source}`}
+        {f.source && (
+          <>
+            {' · Источник: '}
+            <Sources text={f.source} />
+          </>
+        )}
       </p>
     </li>
   )
@@ -138,6 +145,24 @@ function Inline({ text }: { text: string }) {
           part
         ),
       )}
+    </>
+  )
+}
+
+/** Источник правила: markdown-ссылки «[OWASP …](https://…); [PEP 8](…)» → ссылки. Ставит платформа, не модель. */
+export function Sources({ text }: { text: string }) {
+  const links = [...text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)]
+  if (links.length === 0) return <>{text}</>
+  return (
+    <>
+      {links.map((m, i) => (
+        <span key={i}>
+          {i > 0 && '; '}
+          <a href={m[2]} target="_blank" rel="noreferrer noopener" className="underline decoration-dotted underline-offset-2 hover:text-accent">
+            {m[1]}
+          </a>
+        </span>
+      ))}
     </>
   )
 }

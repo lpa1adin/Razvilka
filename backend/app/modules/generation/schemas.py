@@ -29,7 +29,7 @@ class PlanLesson(BaseModel):
     files: list[Short] = Field(default_factory=list, max_length=12, description="Файлы проекта, на которых построен урок")
     fragment_ids: list[int] = Field(default_factory=list, max_length=6, description="id статей из library_search")
     practice: PlanPractice | None = Field(None, description="Практическое задание урока, если оно нужно")
-    quiz: int = Field(0, ge=0, le=10, description="Сколько вопросов теста написать по теории урока")
+    quiz: int = Field(0, ge=0, le=15, description="Сколько вопросов в банк теста модуля написать по теории урока")
     forks: list[PlanFork] = Field(default_factory=list, max_length=3, description="Только для пути: развилки этапа")
 
 
@@ -104,7 +104,7 @@ class DraftTask(BaseModel):
 class LessonDraft(BaseModel):
     theory: list[DraftTheory] = Field(min_length=1, max_length=6)
     task: DraftTask | None = None
-    questions: list[DraftQuestion] = Field(default_factory=list, max_length=12)
+    questions: list[DraftQuestion] = Field(default_factory=list, max_length=15)
 
 
 class TaskFix(BaseModel):
@@ -250,3 +250,7 @@ class StageFix(BaseModel):
 
 class PauseIn(BaseModel):
     mode: Literal["after", "now"] = "after"
+
+
+class QuizTopup(BaseModel):
+    questions: list[DraftQuestion] = Field(max_length=30)

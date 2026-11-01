@@ -34,6 +34,8 @@ export type Review = {
   finished_at: string | null
 }
 
+export type FixState = { running: boolean; error: string | null; notes: string[]; job_id: number | null }
+
 export type ReviewCard = Pick<Review, 'id' | 'kind' | 'status' | 'title' | 'task_slug' | 'verdict' | 'counts' | 'created_at'>
 
 export type Rule = { id: string; group: string; text: string; enabled: boolean }
@@ -56,6 +58,8 @@ export const reviewApi = {
   versions: () => api<RuleSet[]>('/api/workshop/review-rules/versions'),
   reference: (taskId: number) => api<Review | null>(`/api/workshop/tasks/${taskId}/review`),
   requestReference: (taskId: number) => api<Review>(`/api/workshop/tasks/${taskId}/review`, { method: 'POST' }),
+  fixState: (taskId: number) => api<FixState>(`/api/workshop/tasks/${taskId}/review/fix`),
+  fix: (taskId: number) => api<FixState>(`/api/workshop/tasks/${taskId}/review/fix`, { method: 'POST' }),
   accept: (id: number, note: string) => api<Review>(`/api/workshop/reviews/${id}/accept`, { method: 'POST', body: JSON.stringify({ note }) }),
 }
 

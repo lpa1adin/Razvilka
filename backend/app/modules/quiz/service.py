@@ -21,6 +21,15 @@ from app.modules.quiz.models import (
 from app.modules.quiz.schemas import AttemptItemOut, AttemptOut, QuestionIn, SimilarQuestion, TopicCard
 
 
+# Тест — 5–10 случайных вопросов из банка темы; банк — 20–50, чтобы попытки не повторялись (банк ≈ 4× теста)
+TEST_MIN, TEST_MAX = 5, 10
+BANK_MIN, BANK_MAX = 20, 50
+
+
+def test_size(bank: int) -> int:
+    return max(TEST_MIN, min(TEST_MAX, round(bank / 4)))
+
+
 class QuizError(Exception):
     """Ошибка, понятная пользователю."""
 

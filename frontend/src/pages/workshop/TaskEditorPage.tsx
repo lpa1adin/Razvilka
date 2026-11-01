@@ -247,7 +247,7 @@ export function TaskEditorPage() {
       </header>
 
       {task.editing.check_report && !queued && <CheckReportView report={task.editing.check_report} stale={stale} />}
-      <ReferenceReview taskId={task.id} specKey={`${task.editing.number}:${JSON.stringify(task.editing.spec)}`} dirty={dirty} editable={editable} onJump={jumpTo} />
+      <ReferenceReview taskId={task.id} specKey={`${task.editing.number}:${JSON.stringify(task.editing.spec)}`} dirty={dirty} editable={editable} onJump={jumpTo} onChange={loaded.reload} />
 
       <div role="tablist" aria-label="Части задания" className="relative flex gap-1 overflow-x-auto border-b border-line">
         <Glider variant="underline" />

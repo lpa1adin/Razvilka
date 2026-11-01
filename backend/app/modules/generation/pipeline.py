@@ -21,7 +21,7 @@ from app.modules.courses.models import Course
 from app.modules.courses.schemas import CourseContent
 from app.modules.generation import prompts
 from app.modules.generation.models import GenRequest, GenStatus, GenWhat
-from app.modules.generation.schemas import DraftTask, LessonDraft, Plan, PlanLesson, PlanModule, Step, TaskFix
+from app.modules.generation.schemas import DraftTask, LessonDraft, Plan, PlanLesson, PlanModule, QuizTopup, Step, TaskFix
 from app.modules.generation.service import normalize_plan, project_dir
 from app.modules.library.models import Fragment, FragmentStatus
 from app.modules.practice import service as practice
@@ -162,7 +162,8 @@ def _topic_for(db: Session, req: GenRequest, plan: Plan, module: PlanModule) -> 
         n = 2
         while db.scalar(select(QuizTopic.id).where(QuizTopic.slug == slug)):
             slug, n = f"{base}-{n}", n + 1
-        topic = QuizTopic(slug=slug, title=title[:200], description=plan.description[:1000], published=False, size=10)
+        size = quiz.test_size(sum(l.quiz for l in module.lessons))
+        topic = QuizTopic(slug=slug, title=title[:200], description=plan.description[:1000], published=False, size=size)
         db.add(topic)
         db.flush()
         topics[key] = topic.id
@@ -216,33 +217,40 @@ def _materialize(db: Session, req: GenRequest, admin: User, plan: Plan, module: 
     question_ids = []
     if draft.questions:
         topic = _topic_for(db, req, plan, module)
-        for i, dq in enumerate(draft.questions, 1):
-            try:
-                data = QuestionIn(
-                    type=dq.type, prompt=dq.prompt, code=dq.code, code_lang=dq.code_lang,
-                    options=dq.options.model_dump(exclude_none=True), answer=dq.answer.model_dump(exclude_none=True),
-                    explanation=dq.explanation, fragment_id=dq.fragment_id if dq.fragment_id in known else None,
-                    subtopic=lesson.title[:120], difficulty=dq.difficulty, status=QuestionStatus.draft,
-                )
-            except ValidationError as exc:
-                notes.append(f"Вопрос {i} пропущен: {exc.errors()[0]['msg']}.")
-                continue
-            if similar := quiz.similar_questions(db, topic.id, data.prompt, data.code):
-                notes.append(f"Вопрос {i} пропущен: похож на «{similar[0].prompt[:60]}».")
-                continue
-            if data.fragment_id is None:
-                notes.append(f"Вопрос {i}: источник не найден в библиотеке — укажите статью вручную.")
-            question = Question(topic_id=topic.id)
-            quiz.apply(question, data)
-            db.add(question)
-            db.flush()
-            question_ids.append(question.id)
+        question_ids = _add_questions(db, topic, draft.questions, known, lambda _: lesson.title, notes)
 
     db.commit()
     return {
         "module_id": module.id, "task_id": task_id, "question_ids": question_ids, "theory": theory_ids,
         "why": {str(t.fragment_id): t.why for t in theory}, "notes": notes, "fixes": 0, "done": True,
     }
+
+
+def _add_questions(db: Session, topic: QuizTopic, drafts, known: dict, subtopic, notes: list[str]) -> list[int]:
+    """Вопросы Claude → черновики банка: формат, источник и похожесть на уже существующие проверяет платформа."""
+    ids = []
+    for i, dq in enumerate(drafts, 1):
+        try:
+            data = QuestionIn(
+                type=dq.type, prompt=dq.prompt, code=dq.code, code_lang=dq.code_lang,
+                options=dq.options.model_dump(exclude_none=True), answer=dq.answer.model_dump(exclude_none=True),
+                explanation=dq.explanation, fragment_id=dq.fragment_id if dq.fragment_id in known else None,
+                subtopic=subtopic(dq)[:120], difficulty=dq.difficulty, status=QuestionStatus.draft,
+            )
+        except ValidationError as exc:
+            notes.append(f"Вопрос {i} пропущен: {exc.errors()[0]['msg']}.")
+            continue
+        if similar := quiz.similar_questions(db, topic.id, data.prompt, data.code):
+            notes.append(f"Вопрос {i} пропущен: похож на «{similar[0].prompt[:60]}».")
+            continue
+        if data.fragment_id is None:
+            notes.append(f"Вопрос {i}: источник не найден в библиотеке — укажите статью вручную.")
+        question = Question(topic_id=topic.id)
+        quiz.apply(question, data)
+        db.add(question)
+        db.flush()
+        ids.append(question.id)
+    return ids
 
 
 def _lesson_blocks(req: GenRequest, module: PlanModule, lesson: PlanLesson, last_in_module: bool) -> list[dict]:
@@ -361,32 +369,40 @@ def _review_references(db: Session, req: GenRequest, steps: Steps, admin: User, 
         return
     clean, flagged, failed = 0, 0, 0
     for n, task in enumerate(tasks, 1):
-        # После паузы уже проверенные эталоны (та же редакция) второй раз лимит не тратят
-        done = review_service.reference_review(db, task)
-        if done is not None and done.status.value == "done":
-            clean += done.verdict != "changes_requested"
-            flagged += done.verdict == "changes_requested"
-            continue
-        checkpoint(req)
-        steps.set("review", "running", f"проверяет эталон {n} из {len(tasks)}")
-        try:
-            review = review_service.request_reference(db, admin, task, enqueue_job=False)
-            review_service.run(db, review.id)
-            db.refresh(review)
-        except review_service.ReviewError as exc:
-            steps.set("review", "failed", str(exc))
-            return
+        lesson = next(l for l in lesson_ids if records.get(l, {}).get("task_id") == task.id)
+        rec = records[lesson]
+        # После паузы уже проверенную редакцию эталона второй раз не ревьюим — лимит не тратим
+        review = review_service.reference_review(db, task)
+        if review is None or review.status.value != "done":
+            checkpoint(req)
+            steps.set("review", "running", f"проверяет эталон {n} из {len(tasks)}")
+            try:
+                review = review_service.request_reference(db, admin, task, enqueue_job=False)
+                review_service.run(db, review.id)
+                db.refresh(review)
+            except review_service.ReviewError as exc:
+                steps.set("review", "failed", str(exc))
+                return
+        if review.status.value == "done" and review.verdict == "changes_requested" and not rec.get("review_fixed"):
+            # Не ждём админа: Claude сам правит эталон по замечаниям, runner перепроверяет, Ревьюер смотрит снова
+            checkpoint(req)
+            steps.set("review", "running", f"исправляет эталон {n} из {len(tasks)} по замечаниям Ревьюера")
+            review, notes = fix_by_review(db, task, admin, review, wait=lambda d, ids: _wait_checks(d, ids, req), stop=stop_now(req.id))
+            rec["review_fixed"] = True
+            rec["notes"] = [*rec.get("notes", []), *notes]
+            if review.status.value == "done" and review.verdict == "changes_requested":
+                c = review_service.counts(review)
+                rec["notes"].append(
+                    f"Ревьюер: у эталона остались {c['blocker']} blocker, {c['major']} major. Нажмите «Ревьюер» в карточке — "
+                    "там замечания с кодом: «Исправить по замечаниям» ещё раз, правка вручную или «Принять» с пояснением."
+                )
+            req.result = {**req.result, "lessons": {**records, lesson: rec}}
+            flag_modified(req, "result")
+            db.commit()
         if review.status.value == "failed":
             failed += 1
         elif review.verdict == "changes_requested":
             flagged += 1
-            lesson = next(l for l in lesson_ids if records.get(l, {}).get("task_id") == task.id)
-            c = review_service.counts(review)
-            rec = records[lesson]
-            rec["notes"] = [*rec.get("notes", []), f"Ревьюер: у эталона {c['blocker']} blocker, {c['major']} major. Нажмите «Ревьюер» в карточке — там каждое замечание с кодом эталона; исправьте эталон или примите замечания с пояснением."]
-            req.result = {**req.result, "lessons": {**records, lesson: rec}}
-            flag_modified(req, "result")
-            db.commit()
         else:
             clean += 1
     detail = f"без серьёзных замечаний: {clean} из {len(tasks)}" + (f", с замечаниями: {flagged}" if flagged else "") + (f", не удалось: {failed}" if failed else "")
@@ -434,6 +450,7 @@ def run_draft(db: Session, request_id: int, admin_id: int, lesson_id: str = "", 
         files_outline = "\n".join(outline(cwd, f) for f in (lesson.files or [])[:6]) if cwd else ""
         system, prompt = prompts.lesson_prompt(
             req, plan.model_dump(), module.model_dump(), lesson.model_dump(), described, instruction or None, files_outline,
+            review_service.rules_markdown(review_service.active_rules(db).rules) if lesson.practice else "",
         )
         usage: dict[str, int] = {}
         try:
@@ -477,6 +494,10 @@ def handle(db: Session, payload: dict) -> dict:
             )
         except (Paused, claude.Stopped):
             return _paused(db, int(payload["request_id"]), payload)
+    if payload["type"] == "gen_quiz_topup":
+        return run_quiz_topup(db, int(payload["topic_id"]), int(payload["target"]))
+    if payload["type"] == "gen_fix_reference":
+        return run_fix_reference(db, int(payload["task_id"]), int(payload["admin_id"]))
     raise ValueError(f"Неизвестная задача генерации {payload['type']!r}")
 
 
@@ -497,3 +518,93 @@ def _paused(db: Session, request_id: int, payload: dict) -> dict:
     db.commit()
     log.info("генерация %s на паузе", request_id)
     return {"paused": True}
+
+
+# ---------- Эталон по замечаниям Ревьюера ----------
+
+FIX_ROUNDS = 2
+
+
+def _serious(review) -> list[dict]:
+    return [f for f in review.findings if f["severity"] in ("blocker", "major")]
+
+
+def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=None) -> tuple[object, list[str]]:
+    """До FIX_ROUNDS раундов: Claude правит эталон по замечаниям → runner (эталон проходит, старт — нет) →
+    свежее ревью новой редакции. Сломал автотесты — эталон возвращается к прежней редакции."""
+    notes: list[str] = []
+    rules = review_service.rules_markdown(review_service.active_rules(db).rules)
+    for _ in range(FIX_ROUNDS):
+        findings = _serious(review)
+        if review.status.value != "done" or review.verdict != "changes_requested" or not findings:
+            break
+        version = practice.editing_version(db, task)
+        saved = {k: getattr(version, k) for k in ("spec", "check_status", "check_report", "checked_hash")}
+        try:
+            system, prompt = prompts.review_fix_prompt({k: v for k, v in version.spec.items() if k != "fragment_ids"}, review.findings, rules)
+            fix = claude.run_structured("fix", prompt, system, TaskFix, effort="high", max_turns=20, should_stop=stop)
+            spec = _spec(fix.task, version.spec.get("fragment_ids", []))
+            if spec.kind != version.spec["kind"]:
+                raise ValueError("Claude поменял вид задания")
+        except (claude.AgentUnavailable, ValidationError, ValueError) as exc:
+            notes.append(f"Исправить эталон по замечаниям Ревьюера не удалось: {str(exc)[:200]}")
+            break
+        version.spec = spec.model_dump()
+        db.commit()
+        practice.request_check(db, task)
+        wait(db, [task.id])
+        db.refresh(version)
+        if version.check_status is not CheckStatus.passed:
+            for k, v in saved.items():
+                setattr(version, k, v)
+            db.commit()
+            notes.append("Исправление по замечаниям Ревьюера сломало автотесты — эталон возвращён к прежней редакции.")
+            break
+        before = len(findings)
+        review = review_service.request_reference(db, admin, task, enqueue_job=False)
+        review_service.run(db, review.id)
+        db.refresh(review)
+        left = len(_serious(review)) if review.status.value == "done" else None
+        notes.append(
+            f"Ревьюер нашёл серьёзных замечаний: {before} — эталон исправлен автоматически ({fix.note}). "
+            + ("Повторное ревью: замечаний нет." if left == 0 else f"Повторное ревью: осталось {left}." if left else "Повторное ревью не удалось.")
+        )
+    return review, notes
+
+
+def run_fix_reference(db: Session, task_id: int, admin_id: int) -> dict:
+    """Кнопка «Исправить по замечаниям» в отчёте Ревьюера (для уже созданных заданий)."""
+    task = db.get(Task, task_id)
+    review = review_service.reference_review(db, task)
+    if review is None:
+        raise ValueError("У этой редакции эталона ещё нет ревью")
+    review, notes = fix_by_review(db, task, db.get(User, admin_id), review, wait=_wait_checks)
+    return {"verdict": review.verdict, "notes": notes}
+
+
+# ---------- Банк вопросов: дописать до нужного размера ----------
+
+
+def run_quiz_topup(db: Session, topic_id: int, target: int) -> dict:
+    """Дописывает банк темы до target вопросов по тем же статьям. Новые вопросы — черновики: их проверяет админ."""
+    topic = db.get(QuizTopic, topic_id)
+    existing = db.scalars(select(Question).where(Question.topic_id == topic.id)).all()
+    count = min(30, target - len(existing))
+    if count <= 0:
+        return {"added": 0, "notes": ["Банк уже не меньше нужного размера"]}
+    ids = list(dict.fromkeys(q.fragment_id for q in existing if q.fragment_id))
+    fragments = _fragments(db, ids)
+    if not fragments:
+        raise ValueError("У вопросов темы нет статей-источников — не на чем строить новые вопросы")
+    # Подтема нового вопроса — как у вопросов той же статьи
+    subtopics = {q.fragment_id: q.subtopic for q in existing if q.fragment_id and q.subtopic}
+    system, prompt = prompts.quiz_topup_prompt(
+        topic.title, count, [f"#{f.id} «{f.title}» — {f.source.title}" for f in fragments.values()],
+        [q.prompt[:200] for q in existing],
+    )
+    draft = claude.run_structured("draft", prompt, system, QuizTopup, effort="high")
+    notes: list[str] = []
+    known = _fragments(db, ids + [q.fragment_id for q in draft.questions])
+    added = _add_questions(db, topic, draft.questions[:count], known, lambda dq: subtopics.get(dq.fragment_id, ""), notes)
+    db.commit()
+    return {"added": len(added), "notes": notes}

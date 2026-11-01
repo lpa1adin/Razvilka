@@ -77,12 +77,19 @@ def fake_claude(monkeypatch):
     return calls
 
 
+def finish_runner_jobs(db):
+    """Настоящий runner закрывает свою задачу — иначе следующая проверка той же версии считает, что идёт прежняя."""
+    for job in db.scalars(select(Job).where(Job.kind == "runner", Job.status == "queued")):
+        job.status = "done"
+
+
 def pass_checks(*_args, **_kwargs):
     """Вместо runner: отмечаем проверку пройденной, как это сделал бы verify_task."""
     with SessionLocal() as db:
         for version in db.scalars(select(TaskVersion).where(TaskVersion.check_status == CheckStatus.queued)):
             version.check_status = CheckStatus.passed
             version.checked_hash = spec_hash(version.spec)
+        finish_runner_jobs(db)
         db.commit()
 
 
@@ -340,3 +347,127 @@ def test_redo_keeps_lesson_number(admin_client, projects, fake_claude, monkeypat
     run_jobs()
     step = next(s for s in admin_client.get(f"/api/workshop/generate/requests/{rid}").json()["steps"] if s["key"] == f"lesson:{second}")
     assert step["label"] == "Урок 2. Меню"
+
+
+def major_finding(file="index.html"):
+    return {"rule": "COR-01", "severity": "major", "file": file, "line": 1, "problem": "Нет проверки на пустые данные",
+            "scenario": "Пустой ввод → исключение", "fix_hint": "Проверить вход"}
+
+
+def fixed_task():
+    from app.modules.generation.schemas import TaskFix
+    lesson = fake_lesson(make_fragment("Ещё статья", "текст")).task.model_dump()
+    lesson["solution"] = {**SOLUTION, "index.html": "<header class='logo'>Фишт — исправлено</header>"}
+    return TaskFix.model_validate({"task": lesson, "note": "добавлена проверка пустых данных"})
+
+
+def test_reviewer_findings_fixed_automatically(admin_client, projects, fake_claude, monkeypatch):
+    """Эталон с замечаниями Ревьюера: Claude правит его сам, runner перепроверяет, повторное ревью чистое."""
+    monkeypatch.setattr(pipeline, "_wait_checks", pass_checks)
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    reviews = iter([ModelReport.model_validate({"findings": [major_finding()]}), ModelReport(findings=[])])
+    fake_claude.answers.update(plan=fake_plan(fragment), draft=fake_lesson(fragment), fix=fixed_task())
+    original = claude.run_structured
+
+    def with_reviews(purpose, prompt, system, schema, **kwargs):
+        if purpose == "review":
+            fake_claude.append({"purpose": purpose, "prompt": prompt, "cwd": kwargs.get("cwd")})
+            return next(reviews)
+        if purpose == "fix":
+            assert "COR-01" in prompt and "Нет проверки на пустые данные" in prompt  # замечания дошли до Claude
+        return original(purpose, prompt, system, schema, **kwargs)
+
+    monkeypatch.setattr(claude, "run_structured", with_reviews)
+    req = admin_client.post("/api/workshop/generate/requests", json={"what": "course", "project": "fisht-trails"}).json()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/plan")
+    run_jobs()
+    draft_prompt_rules = admin_client.post(f"/api/workshop/generate/requests/{req['id']}/draft")
+    assert draft_prompt_rules.status_code == 200
+    run_jobs()
+    out = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()
+    lesson = out["lessons"][0]
+    assert lesson["task"]["review_verdict"] == "pass", lesson
+    assert any("исправлен автоматически" in n and "замечаний нет" in n for n in lesson["notes"])
+    assert [c["purpose"] for c in fake_claude].count("review") == 2
+    draft_call = next(c for c in fake_claude if c["purpose"] == "draft")
+    assert "COR-01" in draft_call["prompt"]  # правила Ревьюера наставник видит заранее
+    task = admin_client.get(f"/api/workshop/tasks/{lesson['task']['id']}").json()
+    assert "исправлено" in task["editing"]["spec"]["solution"]["index.html"]
+
+
+def test_fix_that_breaks_tests_is_reverted(admin_client, projects, fake_claude, monkeypatch):
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    fake_claude.answers.update(plan=fake_plan(fragment), draft=fake_lesson(fragment), fix=fixed_task(),
+                               review=ModelReport.model_validate({"findings": [major_finding()]}))
+
+    def checks(*_args, **_kwargs):
+        with SessionLocal() as db:
+            for version in db.scalars(select(TaskVersion).where(TaskVersion.check_status == CheckStatus.queued)):
+                broken = "исправлено" in version.spec["solution"]["index.html"]
+                version.check_status = CheckStatus.failed if broken else CheckStatus.passed
+                version.checked_hash = spec_hash(version.spec)
+            finish_runner_jobs(db)
+            db.commit()
+
+    monkeypatch.setattr(pipeline, "_wait_checks", checks)
+    req = admin_client.post("/api/workshop/generate/requests", json={"what": "course", "project": "fisht-trails"}).json()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/plan")
+    run_jobs()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/draft")
+    run_jobs()
+    lesson = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()["lessons"][0]
+    assert any("эталон возвращён к прежней редакции" in n for n in lesson["notes"])
+    assert lesson["task"]["check_status"] == "passed"  # эталон снова прежний и проходит автотесты
+    task = admin_client.get(f"/api/workshop/tasks/{lesson['task']['id']}").json()
+    assert "исправлено" not in task["editing"]["spec"]["solution"]["index.html"]
+
+
+def test_quiz_bank_is_balanced_and_test_sized(admin_client, projects, fake_claude, monkeypatch):
+    """Банк модуля — 20–50 вопросов, тест — 5–10 из него."""
+    monkeypatch.setattr(pipeline, "_wait_checks", pass_checks)
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    plan = two_lessons(fragment).model_dump()
+    for lesson in plan["modules"][0]["lessons"]:
+        lesson["quiz"] = 2
+    fake_claude.answers["plan"] = Plan.model_validate(plan)
+    req = admin_client.post("/api/workshop/generate/requests", json={"what": "course", "project": "fisht-trails"}).json()
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/plan")
+    run_jobs()
+    lessons = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()["plan"]["modules"][0]["lessons"]
+    assert [l["quiz"] for l in lessons] == [10, 10]
+    fake_claude.answers["draft"] = fake_lesson(fragment)
+    admin_client.post(f"/api/workshop/generate/requests/{req['id']}/draft")
+    run_jobs()
+    topic = admin_client.get(f"/api/workshop/generate/requests/{req['id']}").json()["topics"][0]
+    sizes = {t["id"]: t["size"] for t in admin_client.get("/api/workshop/quiz/topics").json()}
+    assert sizes[topic["id"]] == 5
+    bad = admin_client.put(f"/api/workshop/quiz/topics/{topic['id']}", json={"title": "Тест", "size": 20})
+    assert bad.status_code == 422
+
+
+def test_quiz_bank_topup(admin_client, fake_claude):
+    from app.modules.generation.schemas import QuizTopup
+    from app.modules.quiz.models import Question, QuizTopic
+
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    topic_id = admin_client.post("/api/workshop/quiz/topics", json={"title": "Вёрстка", "size": 5}).json()["id"]
+    lesson = fake_lesson(fragment)
+    with SessionLocal() as db:
+        db.add(Question(topic_id=topic_id, type="single", prompt=lesson.questions[0].prompt, options={"items": [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}]},
+                        answer={"correct": ["a"]}, fragment_id=fragment, subtopic="Шапка"))
+        db.commit()
+    new = lesson.questions[0].model_copy(update={"prompt": "Зачем нужен тег nav?"})
+    fake_claude.answers["draft"] = QuizTopup(questions=[lesson.questions[0], new])  # первый — повтор существующего
+    assert admin_client.post(f"/api/workshop/quiz/topics/{topic_id}/topup", json={"target": 20}).json()["running"] is True
+    run_jobs()
+    state = admin_client.get(f"/api/workshop/quiz/topics/{topic_id}/topup").json()
+    with SessionLocal() as db:
+        db.query(Job).filter(Job.status == "queued").update({"status": "done"})
+        db.commit()
+    assert "похож" in " ".join(state["notes"]) or state["added"] is None
+    with SessionLocal() as db:
+        prompts_ = [q.prompt for q in db.query(Question).filter(Question.topic_id == topic_id)]
+        assert "Зачем нужен тег nav?" in prompts_ and len(prompts_) == 2
+        assert db.get(QuizTopic, topic_id).size == 5
+    prompt = next(c["prompt"] for c in fake_claude if c["purpose"] == "draft")
+    assert "Допиши 19 новых" in prompt and lesson.questions[0].prompt[:30] in prompt

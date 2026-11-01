@@ -40,12 +40,13 @@ def plan_prompt(req, previous: dict | None, feedback: str | None, project_map: s
         "- Модули и уроки идут от простого к сложному. В уроке одна мысль; files — файлы проекта, на которых он построен.",
         "- Для каждого урока подбери 1–3 статьи библиотеки (fragment_ids).",
         "- practice — задание, которое проверяется автотестами в браузере (web), на Python или SQL. Не каждому уроку оно нужно.",
-        "- quiz — число вопросов теста по теории урока (0–8).",
+        "- quiz — сколько вопросов по теории урока (0–15). Вопросы модуля — банк его теста: тест берёт 5–10 случайных,",
+        "  поэтому в модуле с теорией в сумме 20–50 вопросов. Модулю без теории (только практика) тест не нужен — 0.",
     ]
     if req.what.value == "task":
         task.append("- Нужны только практические задания: один модуль, у каждого урока есть practice, quiz = 0.")
     if req.what.value == "quiz":
-        task.append("- Нужен только банк вопросов: один модуль, уроки = подтемы, practice нет, quiz 5–10 на подтему.")
+        task.append("- Нужен только банк вопросов: один модуль, уроки = подтемы, practice нет, quiz 5–15 на подтему, всего 20–50.")
     if req.what.value == "path":
         task += [
             "- Это путь «напиши заново сам» (BRIEF §5.5): ученик пишет этот проект сам с пустой папки, по этапам.",
@@ -106,6 +107,7 @@ QUESTION_FORMAT = """\
 
 def lesson_prompt(
     req, plan: dict, module: dict, lesson: dict, fragments: list[str], instruction: str | None, files_outline: str = "",
+    reviewer_rules: str = "",
 ) -> tuple[str, str]:
     outline = "\n".join(
         f"{m['title']}: " + "; ".join(l["title"] for l in m["lessons"]) for m in plan["modules"]
@@ -128,6 +130,13 @@ def lesson_prompt(
     if practice:
         parts.append(f"- task: задание вида {practice['kind']}. Идея из плана: {practice['idea']}")
         parts.append(TASK_FORMAT)
+        if reviewer_rules:
+            parts += [
+                "Эталон (solution) потом проверит независимый Ревьюер по правилам ниже; для эталона любое нарушение — "
+                "минимум major. Пиши эталон сразу так, чтобы замечаний не было: граничные случаи (пусто, null/None, 0, "
+                "неверный тип), без необработанных исключений на реалистичном вводе, понятные имена, без лишнего.",
+                reviewer_rules,
+            ]
     else:
         parts.append("- task: null — в этом уроке практики нет.")
     if lesson.get("quiz"):
@@ -147,6 +156,44 @@ def fix_prompt(task: dict, problems: list[str]) -> tuple[str, str]:
         "",
         "Что нашла проверка:",
         *[f"- {p}" for p in problems],
+        "",
+        "Задание сейчас:",
+        json.dumps(task, ensure_ascii=False),
+        "",
+        TASK_FORMAT,
+    ])
+
+
+def quiz_topup_prompt(topic: str, count: int, fragments: list[str], existing: list[str]) -> tuple[str, str]:
+    return RULES, "\n".join([
+        f"Допиши {count} новых вопросов в банк теста «{topic}». Тест берёт из банка случайные вопросы, поэтому",
+        "банк должен быть разнообразным: разные стороны темы, типы вопросов и сложность (difficulty 1–3).",
+        "Статьи темы (спрашивай только о том, что в них есть; читай через library_fragment):",
+        *[f"- {f}" for f in fragments],
+        "",
+        "Уже есть в банке — не повторяй их ни по смыслу, ни перефразом:",
+        *[f"- {p}" for p in existing],
+        "",
+        QUESTION_FORMAT,
+    ])
+
+
+def review_fix_prompt(task: dict, findings: list[dict], reviewer_rules: str) -> tuple[str, str]:
+    return RULES, "\n".join([
+        "Независимый Ревьюер проверил ЭТАЛОН практического задания и нашёл замечания. Исправь эталон (solution) так,",
+        "чтобы этих замечаний не осталось. Условие, стартовый код и тесты меняй, только если без этого не обойтись;",
+        "смысл задания не меняй. Эталон по-прежнему обязан проходить все тесты, а стартовый код — нет. Если исправление",
+        "меняет поведение на граничном случае — добавь тест на этот случай.",
+        "",
+        "Замечания Ревьюера:",
+        *[
+            f"- [{f['severity']}] {f['rule']} {f['file']}:{f.get('line') or '—'} — {f['problem']} "
+            f"Когда сломается: {f['scenario']} Куда смотреть: {f['fix_hint']}"
+            for f in findings
+        ],
+        "",
+        "Правила Ревьюера (для эталона любое нарушение — минимум major; не создай новых нарушений):",
+        reviewer_rules,
         "",
         "Задание сейчас:",
         json.dumps(task, ensure_ascii=False),

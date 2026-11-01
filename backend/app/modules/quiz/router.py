@@ -6,10 +6,12 @@ from sqlalchemy import func, select
 from app.modules.auth.deps import AdminUser, CurrentUser, Db
 from app.modules.auth.models import User
 from app.modules.courses.service import slugify
+from app.modules.jobs.models import Job
+from app.modules.jobs.queue import enqueue, has_pending
 from app.modules.library.models import Fragment
 from app.modules.quiz import service
 from app.modules.quiz.models import Question, QuestionStatus, QuizAttempt, QuizAttemptItem, QuizTopic
-from app.modules.quiz.schemas import AnswerIn, AttemptOut, QuestionIn, QuestionOut, TopicAdminOut, TopicCard, TopicIn
+from app.modules.quiz.schemas import AnswerIn, AttemptOut, QuestionIn, QuestionOut, TopicAdminOut, TopicCard, TopicIn, TopupIn
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 admin_router = APIRouter(prefix="/api/workshop/quiz", tags=["workshop"])
@@ -187,3 +189,34 @@ def admin_delete_question(question_id: int, db: Db, _: AdminUser):
     else:
         db.delete(question)
     db.commit()
+
+
+# ---------- Дописать банк (Claude, agent-worker) ----------
+
+TOPUP_JOB = "gen_quiz_topup"
+
+
+def _topup_state(db, topic_id: int) -> dict:
+    job = db.scalar(
+        select(Job).where(Job.kind == "agent", Job.payload["type"].astext == TOPUP_JOB, Job.payload["topic_id"].astext == str(topic_id))
+        .order_by(Job.id.desc()).limit(1)
+    )
+    if job is None:
+        return {"running": False, "error": None, "added": None, "notes": []}
+    result = job.result or {}
+    return {"running": job.status.value in ("queued", "running"), "error": job.error, "added": result.get("added"), "notes": result.get("notes", [])}
+
+
+@admin_router.get("/topics/{topic_id}/topup")
+def topup_state(topic_id: int, db: Db, _: AdminUser):
+    return _topup_state(db, topic_id)
+
+
+@admin_router.post("/topics/{topic_id}/topup", status_code=status.HTTP_202_ACCEPTED)
+def topup(topic_id: int, payload: TopupIn, db: Db, _: AdminUser):
+    if db.get(QuizTopic, topic_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Тема не найдена")
+    if has_pending(db, "agent", type=TOPUP_JOB, topic_id=str(topic_id)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Банк уже дописывается")
+    enqueue(db, "agent", {"type": TOPUP_JOB, "topic_id": str(topic_id), "target": str(payload.target)})
+    return _topup_state(db, topic_id)

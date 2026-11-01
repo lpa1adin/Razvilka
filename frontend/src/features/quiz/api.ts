@@ -98,6 +98,12 @@ export type QuestionAdmin = QuestionData & { id: number; topic_id: number; fragm
 
 export type Similar = { id: number; prompt: string; similarity: number }
 
+export type TopupState = { running: boolean; error: string | null; added: number | null; notes: string[] }
+
+/** Тест — 5–10 вопросов из банка темы; банк — 20–50 (как в quiz.service на сервере) */
+export const TEST_SIZE = { min: 5, max: 10 }
+export const BANK_SIZE = { min: 20, max: 50 }
+
 export const quizAdminApi = {
   topics: () => api<TopicAdmin[]>('/api/workshop/quiz/topics'),
   createTopic: (body: { title: string; description: string; size: number; published: boolean }) => api<TopicAdmin>('/api/workshop/quiz/topics', json('POST', body)),
@@ -105,5 +111,7 @@ export const quizAdminApi = {
   questions: (topicId: number) => api<QuestionAdmin[]>(`/api/workshop/quiz/topics/${topicId}/questions`),
   createQuestion: (topicId: number, body: QuestionData, force = false) => api<QuestionAdmin>(`/api/workshop/quiz/topics/${topicId}/questions${force ? '?force=true' : ''}`, json('POST', body)),
   updateQuestion: (id: number, body: QuestionData, force = false) => api<QuestionAdmin>(`/api/workshop/quiz/questions/${id}${force ? '?force=true' : ''}`, json('PUT', body)),
+  topupState: (topicId: number) => api<TopupState>(`/api/workshop/quiz/topics/${topicId}/topup`),
+  topup: (topicId: number, target: number) => api<TopupState>(`/api/workshop/quiz/topics/${topicId}/topup`, json('POST', { target })),
   removeQuestion: (id: number) => api<void>(`/api/workshop/quiz/questions/${id}`, json('DELETE')),
 }

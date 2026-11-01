@@ -73,7 +73,7 @@ class QuestionOut(QuestionIn):
 class TopicIn(BaseModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""
-    size: int = Field(10, ge=3, le=30)
+    size: int = Field(10, ge=5, le=10)  # quiz.service.TEST_MIN…TEST_MAX
     published: bool = False
 
 
@@ -142,3 +142,7 @@ class AttemptOut(BaseModel):
     finished_at: datetime | None
     note: str | None  # например: «в теме только 8 вопросов — тест короче»
     items: list[AttemptItemOut]
+
+
+class TopupIn(BaseModel):
+    target: int = Field(20, ge=20, le=50)  # до скольких вопросов дописать банк (quiz.service.BANK_MIN…BANK_MAX)

@@ -1,11 +1,11 @@
-import { ArrowLeft, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, LoaderCircle, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { Button } from '@/components/ui/Button'
 import { inputClass, TextArea, TextField } from '@/components/ui/Field'
 import { Badge, ErrorBlock, Skeleton } from '@/components/ui/States'
-import { quizAdminApi, TYPE_LABEL, type QuestionAdmin, type QuestionStatus } from '@/features/quiz/api'
+import { BANK_SIZE, quizAdminApi, TEST_SIZE, TYPE_LABEL, type QuestionAdmin, type QuestionStatus, type TopupState } from '@/features/quiz/api'
 import { QuestionEditor } from '@/features/quiz/QuestionEditor'
 import { Label } from '@/features/quiz/QuestionView'
 import { useApi } from '@/lib/useApi'
@@ -71,12 +71,12 @@ export function QuizTopicPage() {
           <Badge tone={form.published ? 'accent' : 'ai'}>{form.published ? 'тема опубликована' : 'тема скрыта'}</Badge>
           <Badge>опубликовано вопросов: {published}</Badge>
           {published < form.size && <Badge tone="ai">меньше, чем вопросов в тесте ({form.size}) — тест будет короче</Badge>}
-          {published < form.size * 5 && <span className="text-xs text-faint">Для тестов без повторов нужен банк хотя бы в 5 раз больше теста.</span>}
+          {published < BANK_SIZE.min && <span className="text-xs text-faint">Банк теста — {BANK_SIZE.min}–{BANK_SIZE.max} вопросов: тогда попытки почти не повторяются.</span>}
         </div>
         <div className="grid gap-4 md:grid-cols-[1fr_1.4fr_140px]">
           <TextField label="Название" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <TextArea label="Описание" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="[&_textarea]:min-h-10" />
-          <TextField label="Вопросов в тесте" type="number" min={3} max={30} value={form.size} onChange={(e) => setForm({ ...form, size: Number(e.target.value) })} />
+          <TextField label="Вопросов в тесте" type="number" min={TEST_SIZE.min} max={TEST_SIZE.max} hint={`${TEST_SIZE.min}–${TEST_SIZE.max}`} value={form.size} onChange={(e) => setForm({ ...form, size: Number(e.target.value) })} />
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2 text-sm">
@@ -93,6 +93,8 @@ export function QuizTopicPage() {
           )}
         </div>
       </section>
+
+      <BankTopup topicId={topicId} total={questions.data?.length ?? 0} onDone={questions.reload} />
 
       <section aria-labelledby="bank-title" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -174,5 +176,76 @@ export function QuizTopicPage() {
         }}
       />
     </div>
+  )
+}
+
+/** Банк меньше 20 — наставник дописывает вопросы по статьям темы (черновиками, их проверяет админ). */
+function BankTopup({ topicId, total, onDone }: { topicId: number; total: number; onDone: () => void }) {
+  const [state, setState] = useState<TopupState | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const targets = [20, 30, 40, 50].filter((t) => t > total)
+  const [target, setTarget] = useState(targets[0] ?? BANK_SIZE.max)
+  useEffect(() => {
+    quizAdminApi.topupState(topicId).then(setState, () => undefined)
+  }, [topicId])
+  const running = !!state?.running
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(async () => {
+      const next = await quizAdminApi.topupState(topicId).catch(() => null)
+      if (!next) return
+      setState(next)
+      if (!next.running) onDone()
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [running, topicId, onDone])
+
+  if (!running && targets.length === 0 && !state?.notes.length) return null
+  const start = async () => {
+    setError(null)
+    try {
+      setState(await quizAdminApi.topup(topicId, target))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось запустить')
+    }
+  }
+  return (
+    <section className="panel flex flex-col gap-3 p-5" aria-label="Размер банка">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="min-w-[240px] flex-1 text-sm text-muted">
+          <span className="font-medium text-text">В банке {total} вопросов.</span> Тест берёт {TEST_SIZE.min}–{TEST_SIZE.max} случайных, банк —{' '}
+          {BANK_SIZE.min}–{BANK_SIZE.max}. Наставник допишет недостающие по статьям темы, без повторов; новые придут черновиками.
+        </p>
+        {running ? (
+          <span role="status" className="flex items-center gap-2 text-sm text-ai">
+            <LoaderCircle className="size-4 animate-spin" aria-hidden /> Наставник пишет вопросы…
+          </span>
+        ) : (
+          targets.length > 0 && (
+            <div className="flex items-center gap-2">
+              <select className={`${inputClass} h-10 !w-28`} value={target} onChange={(e) => setTarget(Number(e.target.value))} aria-label="До скольких вопросов">
+                {targets.map((t) => (
+                  <option key={t} value={t}>
+                    до {t}
+                  </option>
+                ))}
+              </select>
+              <Button onClick={start} icon={<Sparkles className="size-4" />} className="shrink-0 whitespace-nowrap">
+                Дописать вопросы
+              </Button>
+            </div>
+          )
+        )}
+      </div>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {!running && state && (state.error || state.added !== null) && (
+        <ul className={`flex flex-col gap-0.5 text-xs ${state.error ? 'text-danger' : 'text-muted'}`}>
+          {state.error ? <li>Не получилось: {state.error}</li> : <li>Добавлено вопросов: {state.added} — проверьте и опубликуйте их в банке ниже.</li>}
+          {state.notes.slice(0, 6).map((n, i) => (
+            <li key={i}>• {n}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

@@ -3,6 +3,8 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 
 from app.modules.auth.deps import AdminUser, CurrentUser, Db
+from app.modules.jobs.models import Job
+from app.modules.jobs.queue import enqueue, has_pending
 from app.modules.practice import service as practice
 from app.modules.practice.models import Task
 from app.modules.review import service
@@ -98,6 +100,39 @@ def request_reference(task_id: int, db: Db, admin: AdminUser):
         return service.to_out(db, service.request_reference(db, admin, _task(db, task_id)))
     except service.ReviewError as exc:
         raise _bad(exc) from exc
+
+
+FIX_JOB = "gen_fix_reference"
+
+
+def _fix_state(db, task_id: int) -> dict:
+    job = db.scalar(
+        select(Job).where(Job.kind == "agent", Job.payload["type"].astext == FIX_JOB, Job.payload["task_id"].astext == str(task_id))
+        .order_by(Job.id.desc()).limit(1)
+    )
+    if job is None:
+        return {"running": False, "error": None, "notes": [], "job_id": None}
+    return {"running": job.status.value in ("queued", "running"), "error": job.error, "notes": (job.result or {}).get("notes", []), "job_id": job.id}
+
+
+@admin_router.get("/tasks/{task_id}/review/fix")
+def fix_state(task_id: int, db: Db, _: AdminUser):
+    return _fix_state(db, _task(db, task_id).id)
+
+
+@admin_router.post("/tasks/{task_id}/review/fix", status_code=status.HTTP_202_ACCEPTED)
+def fix_by_review(task_id: int, db: Db, admin: AdminUser):
+    """Наставник правит эталон по замечаниям Ревьюера → автотесты → повторное ревью (в agent-worker)."""
+    task = _task(db, task_id)
+    if not task.draft_version:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Исправлять можно черновик: создайте его в редакторе задания")
+    review = service.reference_review(db, task)
+    if review is None or review.status.value != "done" or review.verdict != "changes_requested":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Исправлять нечего: у этой редакции нет замечаний Ревьюера")
+    if has_pending(db, "agent", type=FIX_JOB, task_id=str(task.id)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Эталон уже исправляется")
+    enqueue(db, "agent", {"type": FIX_JOB, "task_id": str(task.id), "admin_id": str(admin.id)})
+    return _fix_state(db, task.id)
 
 
 @admin_router.post("/reviews/{review_id}/accept", response_model=ReviewOut)

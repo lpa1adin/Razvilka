@@ -1,11 +1,11 @@
-import { Check, ScanSearch } from 'lucide-react'
+import { Check, LoaderCircle, ScanSearch, Wrench } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
 import { inputClass } from '@/components/ui/Field'
 import { ApiError } from '@/lib/api'
 
-import { pollReview, reviewApi, type Review } from './api'
+import { pollReview, reviewApi, type FixState, type Review } from './api'
 import { ReviewReport } from './ReviewReport'
 
 type Props = {
@@ -27,6 +27,8 @@ export function ReferenceReview({ taskId, specKey, dirty, editable, onJump, onCh
   const [note, setNote] = useState('')
   const [accepting, setAccepting] = useState(false)
   const stop = useRef<(() => void) | null>(null)
+  // Исправление по замечаниям идёт в agent-worker: правка эталона → автотесты → повторное ревью
+  const [fix, setFix] = useState<FixState | null>(null)
 
   useEffect(() => {
     stop.current?.()
@@ -66,6 +68,33 @@ export function ReferenceReview({ taskId, specKey, dirty, editable, onJump, onCh
   }
 
   const busy = review?.status === 'queued' || review?.status === 'running'
+
+  useEffect(() => {
+    reviewApi.fixState(taskId).then(setFix, () => undefined)
+  }, [taskId])
+  const fixing = !!fix?.running
+  useEffect(() => {
+    if (!fixing) return
+    const timer = window.setInterval(async () => {
+      const next = await reviewApi.fixState(taskId).catch(() => null)
+      if (!next) return
+      setFix(next)
+      if (!next.running) {
+        setReview(await reviewApi.reference(taskId).catch(() => null))
+        onChange?.()
+      }
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [fixing, taskId, onChange])
+
+  const startFix = async () => {
+    setError(null)
+    try {
+      setFix(await reviewApi.fix(taskId))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Не удалось запустить исправление')
+    }
+  }
   // Сообщаем наружу только о переменах после загрузки, не о самой загрузке
   const outcome = review ? `${review.id}:${review.status}:${review.accepted}` : null
   const seen = useRef<string | null>(null)
@@ -84,7 +113,7 @@ export function ReferenceReview({ taskId, specKey, dirty, editable, onJump, onCh
         <span className="text-sm text-muted">эталон не должен учить плохому — без ревью задание не публикуется</span>
         <span className="flex-1" />
         {editable && (
-          <Button variant="secondary" onClick={start} loading={busy} loadingText="Ревьюер читает…" disabled={dirty} title={dirty ? 'Сначала сохраните задание' : undefined}>
+          <Button variant="secondary" onClick={start} loading={busy} loadingText="Ревьюер читает…" disabled={dirty || fixing} title={dirty ? 'Сначала сохраните задание' : undefined}>
             {review ? 'Проверить снова' : 'Ревью эталона'}
           </Button>
         )}
@@ -100,8 +129,26 @@ export function ReferenceReview({ taskId, specKey, dirty, editable, onJump, onCh
       ) : (
         <ReviewReport review={review} withCode onJump={onJump} />
       )}
-      {review?.status === 'done' && review.verdict === 'changes_requested' && !review.accepted && editable && (
+      {fixing && (
+        <p role="status" className="flex items-center gap-2 rounded-md border border-ai/30 bg-ai-soft/50 px-3 py-2 text-sm text-ai">
+          <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden />
+          Наставник исправляет эталон по замечаниям, затем автотесты и повторное ревью — обычно 2–5 минут.
+        </p>
+      )}
+      {!fixing && fix && (fix.error || fix.notes.length > 0) && (
+        <ul className={`flex flex-col gap-0.5 rounded-md border px-3 py-2 text-xs ${fix.error ? 'border-danger/40 text-danger' : 'border-line text-muted'}`}>
+          {fix.error && <li>Исправление не удалось: {fix.error}</li>}
+          {fix.notes.map((n, i) => (
+            <li key={i}>• {n}</li>
+          ))}
+        </ul>
+      )}
+      {review?.status === 'done' && review.verdict === 'changes_requested' && !review.accepted && editable && !fixing && (
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+          <Button onClick={startFix} disabled={dirty} icon={<Wrench className="size-4" />} title={dirty ? 'Сначала сохраните задание' : undefined}>
+            Исправить по замечаниям
+          </Button>
+          <span className="text-xs text-faint">или примите их:</span>
           <input
             className={`${inputClass} h-10 min-w-[260px] flex-1`}
             placeholder="Почему замечания можно принять (видно в отчёте)"

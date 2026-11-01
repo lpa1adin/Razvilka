@@ -34,6 +34,7 @@ from app.modules.jobs.queue import enqueue, has_pending
 from app.modules.library.models import Fragment
 from app.modules.practice import service as practice
 from app.modules.practice.models import CheckStatus, Task
+from app.modules.quiz import service as quiz_service
 from app.modules.quiz.models import Question, QuestionStatus, QuizTopic
 from app.modules.review import service as review_service
 from app.modules.assess.models import Assignment
@@ -197,6 +198,9 @@ def normalize_plan(db: Session, req: GenRequest, plan: Plan) -> Plan:
                 lesson.practice, lesson.quiz = None, 0
             else:
                 lesson.forks = []
+    if req.what in (GenWhat.course, GenWhat.quiz):
+        for module in plan.modules:
+            _balance_quiz(module)
     if req.what is GenWhat.path:
         # Путь — один модуль: этапы идут подряд
         plan.modules = [plan.modules[0].model_copy(update={"lessons": [l for m in plan.modules for l in m.lessons][:8]})]
@@ -478,3 +482,20 @@ def to_out(db: Session, req: GenRequest) -> RequestOut:
               if req.result.get("path_id") and (pth := db.get(ProjectPath, req.result["path_id"])) else None),
         created_at=req.created_at, updated_at=req.updated_at,
     )
+
+
+def _balance_quiz(module) -> None:
+    """Вопросы модуля — банк его теста: 20–50 (quiz.service). Модуль без вопросов теста не получает.
+    Недобор раскладываем по урокам с вопросами, затем по урокам со статьями; перебор срезаем с самых больших."""
+    total = sum(l.quiz for l in module.lessons)
+    if total == 0:
+        return
+    pool = [l for l in module.lessons if l.quiz] + [l for l in module.lessons if not l.quiz and l.fragment_ids]
+    while total < quiz_service.BANK_MIN and any(l.quiz < 15 for l in pool):
+        for lesson in pool:
+            if total < quiz_service.BANK_MIN and lesson.quiz < 15:
+                lesson.quiz += 1
+                total += 1
+    while total > quiz_service.BANK_MAX:
+        max(module.lessons, key=lambda l: l.quiz).quiz -= 1
+        total -= 1

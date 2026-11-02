@@ -549,4 +549,27 @@ def test_fix_cannot_rewrite_statement_or_drop_tests(admin_client, projects, fake
 
     # Тест удалить нельзя: исправление отклоняется целиком
     from app.modules.generation.pipeline import _test_names
-    assert _test_names("def test_a():\n  pass") - _test_names("def test_b():\n  pass") == {"test_a"}
+    assert _test_names({"tests": "def test_a():\n  pass"}) - _test_names({"tests": "def test_b():\n  pass"}) == {"test_a"}
+    assert _test_names({"tests": "", "sql_checks": [{"name": "Данные не изменены"}]}) == {"Данные не изменены"}
+
+
+
+def test_hung_claude_call_times_out(monkeypatch):
+    """Зависший вызов Claude не держит очередь: через agent_timeout_seconds он прерывается понятной ошибкой."""
+    import asyncio
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(claude, "configured", lambda: True)
+    monkeypatch.setattr(settings, "agent_timeout_seconds", 0.2)
+    closed = []
+
+    async def hung():
+        try:
+            await asyncio.sleep(60)
+        finally:
+            closed.append(True)  # как aclose() у потока query(): отмена доходит до вызова
+
+    with pytest.raises(claude.AgentUnavailable, match="не ответил"):
+        claude._run("probe", hung())
+    assert closed == [True]

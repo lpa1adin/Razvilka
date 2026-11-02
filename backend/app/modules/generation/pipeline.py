@@ -524,14 +524,16 @@ def _paused(db: Session, request_id: int, payload: dict) -> dict:
 # ---------- Эталон по замечаниям Ревьюера ----------
 
 FIX_ROUNDS = 2
-PROPOSAL_LABELS = {"statement": "условие", "starter": "стартовый код", "hints": "подсказки"}
+PROPOSAL_LABELS = {"statement": "условие", "starter": "стартовый код", "hints": "подсказки", "sql_setup": "схему и данные SQL"}
 
 
-def _test_names(tests: str) -> set[str]:
-    """Имена тестов: def test_x (Python) и test('Название', …) (веб)."""
+def _test_names(spec: dict) -> set[str]:
+    """Имена тестов: def test_x (Python), test('Название', …) (веб), названия SQL-проверок."""
+    tests = spec.get("tests", "")
     python = re.findall(r"^\s*def (test_\w+)", tests, re.M)
     web = [name for _, name in re.findall(r"\btest\(\s*(['\"`])(.+?)\1", tests)]
-    return set(python) | set(web)
+    sql = [c["name"] for c in spec.get("sql_checks", [])]
+    return set(python) | set(web) | set(sql)
 
 
 def _serious(review) -> list[dict]:
@@ -555,7 +557,7 @@ def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=No
             spec = _spec(fix.task, version.spec.get("fragment_ids", [])).model_dump()
             if spec["kind"] != version.spec["kind"]:
                 raise ValueError("Claude поменял вид задания")
-            if lost := _test_names(version.spec["tests"]) - _test_names(spec["tests"]):
+            if lost := _test_names(version.spec) - _test_names(spec):
                 raise ValueError(f"Claude убрал тесты ({', '.join(sorted(lost))}) — тесты можно только добавлять и уточнять")
         except (claude.AgentUnavailable, ValidationError, ValueError) as exc:
             notes.append(f"Исправить эталон по замечаниям Ревьюера не удалось: {str(exc)[:200]}")
@@ -563,7 +565,8 @@ def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=No
         # Сам Claude меняет только эталон и тесты. Условие, стартовый код и подсказки — то, по чему судит Ревьюер
         # и что видит ученик: их правка ждёт админа, иначе условие можно подогнать под код
         changed = {k: spec[k] for k in practice.PROPOSABLE if spec[k] != version.spec[k]}
-        version.spec = {**version.spec, "solution": spec["solution"], "tests": spec["tests"]}
+        # Тесты у SQL-заданий — список проверок sql_checks
+        version.spec = {**version.spec, "solution": spec["solution"], "tests": spec["tests"], "sql_checks": spec["sql_checks"]}
         if changed:
             version.proposal = {"fields": {**(version.proposal or {}).get("fields", {}), **changed}, "note": fix.note}
         db.commit()

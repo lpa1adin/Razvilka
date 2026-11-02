@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     agent_model: str = "claude-opus-5-5"
     # Второй взгляд на эталоны: другая модель — другие слепые пятна (ADR-025)
     reviewer_second_model: str = "claude-sonnet-5-5"
+    # Предел одного вызова Claude: зависший запрос не должен держать очередь часами (самые долгие уроки — ~10 мин)
+    agent_timeout_seconds: int = 1200
     projects_root: str = "/projects"
     # Рабочие папки путей «напиши заново сам»: <login>/<путь>. Ученик пишет в них в своём редакторе
     workspace_root: str = "/workspace"

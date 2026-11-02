@@ -103,7 +103,7 @@ export type AdminTask = {
     check_report: CheckReport | null
     check_is_current: boolean
     /** правка условия/стартового кода/подсказок от Claude при исправлении эталона — ждёт админа */
-    proposal: { fields: Partial<Pick<TaskSpec, 'statement' | 'starter' | 'hints'>>; note: string } | null
+    proposal: { fields: Partial<Pick<TaskSpec, 'statement' | 'starter' | 'hints' | 'sql_setup'>>; note: string } | null
     change_note: string
     created_at: string
     updated_at: string

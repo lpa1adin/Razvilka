@@ -545,7 +545,7 @@ function SqlChecksEditor({ spec, editable, taskId, onChange }: { spec: TaskSpec;
   )
 }
 
-const PROPOSAL_LABEL = { statement: 'Условие', starter: 'Стартовый код', hints: 'Подсказки' } as const
+const PROPOSAL_LABEL = { statement: 'Условие', starter: 'Стартовый код', hints: 'Подсказки', sql_setup: 'Схема и данные SQL' } as const
 
 /** Claude, исправляя эталон по замечаниям Ревьюера, сам меняет только эталон и тесты. Условие, стартовый код
  *  и подсказки — то, что видит ученик и по чему судит Ревьюер: их правку применяет только админ. */
@@ -568,6 +568,7 @@ function ProposalPanel({ task, dirty, onResolved }: { task: AdminTask; dirty: bo
   const pairs: { label: string; before: string; after: string }[] = []
   if (proposal.fields.statement !== undefined) pairs.push({ label: PROPOSAL_LABEL.statement, before: spec.statement, after: proposal.fields.statement })
   if (proposal.fields.hints !== undefined) pairs.push({ label: PROPOSAL_LABEL.hints, before: spec.hints.join('\n\n'), after: proposal.fields.hints.join('\n\n') })
+  if (proposal.fields.sql_setup !== undefined) pairs.push({ label: PROPOSAL_LABEL.sql_setup, before: spec.sql_setup, after: proposal.fields.sql_setup })
   for (const [file, code] of Object.entries(proposal.fields.starter ?? {})) {
     if ((spec.starter[file] ?? '') !== code) pairs.push({ label: `${PROPOSAL_LABEL.starter}: ${file}`, before: spec.starter[file] ?? '', after: code })
   }

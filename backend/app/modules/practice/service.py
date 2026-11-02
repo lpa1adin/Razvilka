@@ -133,7 +133,7 @@ def publish_problems(db: Session, version: TaskVersion) -> list[str]:
     return problems
 
 
-PROPOSABLE = ("statement", "starter", "hints")
+PROPOSABLE = ("statement", "starter", "hints", "sql_setup")
 
 
 def resolve_proposal(db: Session, task: Task, accept: bool) -> None:

@@ -163,7 +163,14 @@ def _run(purpose: str, coro):
         raise AgentUnavailable("Claude не подключён: добавьте CLAUDE_CODE_OAUTH_TOKEN в .env и перезапустите agent-worker.")
     started = time.monotonic()
     try:
-        value = asyncio.run(coro)
+        # wait_for отменяет зависший вызов; поток query() закрывается в _consume — процесс Claude завершается
+        value = asyncio.run(asyncio.wait_for(coro, settings.agent_timeout_seconds))
+    except TimeoutError as exc:
+        AGENT_RUNS.labels(purpose, "timeout").inc()
+        log.warning("Claude не ответил за %s с (%s)", settings.agent_timeout_seconds, purpose)
+        raise AgentUnavailable(
+            f"Claude не ответил за {settings.agent_timeout_seconds // 60} мин — вызов прерван. Повторите шаг: готовое не потеряется."
+        ) from exc
     except AgentUnavailable:
         AGENT_RUNS.labels(purpose, "error").inc()
         raise

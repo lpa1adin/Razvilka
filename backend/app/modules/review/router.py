@@ -127,8 +127,11 @@ def fix_by_review(task_id: int, db: Db, admin: AdminUser):
     if not task.draft_version:
         raise HTTPException(status.HTTP_409_CONFLICT, "Исправлять можно черновик: создайте его в редакторе задания")
     review = service.reference_review(db, task)
-    if review is None or review.status.value != "done" or review.verdict != "changes_requested":
+    if review is not None and review.status.value == "done" and review.verdict != "changes_requested":
         raise HTTPException(status.HTTP_409_CONFLICT, "Исправлять нечего: у этой редакции нет замечаний Ревьюера")
+    if review is not None and review.status.value in ("queued", "running") and not service.is_stale(review):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ревьюер ещё проверяет эту редакцию — дождитесь отчёта")
+    # Ревью нет, оно упало или оборвалось — задача сначала запросит свежее ревью, потом исправит
     if has_pending(db, "agent", type=FIX_JOB, task_id=str(task.id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Эталон уже исправляется")
     enqueue(db, "agent", {"type": FIX_JOB, "task_id": str(task.id), "admin_id": str(admin.id)})

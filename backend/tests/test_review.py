@@ -202,3 +202,32 @@ def test_stale_running_reference_review_is_replaced(admin_client):
         fresh = rs.request_reference(db, admin, task, enqueue_job=False)
         db.refresh(stale)
         assert fresh.id != stale.id and stale.status is ReviewStatus.failed and "прервано" in stale.error
+
+
+def test_fix_allowed_when_review_was_cut_off(admin_client):
+    """Кнопка «Исправить по замечаниям» не застревает на оборванном ревью: задача сама запросит свежее."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.db import SessionLocal
+    from app.modules.auth.models import User
+    from app.modules.practice import service as practice
+    from app.modules.practice.schemas import TaskSpec
+    from app.modules.review import service as rs
+    from app.modules.review.models import ReviewStatus
+
+    spec = TaskSpec.model_validate({"title": "Шапка", "kind": "web", "statement": "Сделайте шапку",
+                                    "solution": {"index.html": "<header>Фишт</header>"}, "tests": "test('a', () => {})"})
+    with SessionLocal() as db:
+        admin = db.query(User).first()
+        task = practice.create_task(db, "Шапка", "web", admin, spec)
+        review = rs.request_reference(db, admin, task, enqueue_job=False)
+        review.status = ReviewStatus.running
+        db.commit()
+        task_id, review_id = task.id, review.id
+    busy = admin_client.post(f"/api/workshop/tasks/{task_id}/review/fix")
+    assert busy.status_code == 409 and "ещё проверяет" in busy.text  # свежее ревью в работе — ждём
+    with SessionLocal() as db:
+        db.get(rs.Review, review_id).created_at = datetime.now(UTC) - timedelta(hours=9)
+        db.commit()
+    started = admin_client.post(f"/api/workshop/tasks/{task_id}/review/fix")
+    assert started.status_code == 202 and started.json()["running"] is True

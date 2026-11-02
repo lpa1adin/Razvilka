@@ -116,7 +116,7 @@ KIND_NOTE = {
     ReviewKind.reference: (
         "Это ЭТАЛОННОЕ решение задания: по нему будут учиться. Эталон не должен учить плохому — "
         "любая плохая практика здесь как минимум major. Файл tests.* (у SQL — checks.txt) — автотесты задания: проверь по TEST-02, что они "
-        "проверяют каждый критерий условия и граничные случаи и упадут на неверном решении."
+        "проверяют каждый критерий, названный в условии, и упадут на неверном решении. Граничные случаи вне условия — minor."
     ),
 }
 
@@ -257,12 +257,17 @@ def reference_review(db: Session, task: Task) -> Review | None:
     )
 
 
+def is_stale(review: Review) -> bool:
+    """«В работе» дольше двух пределов вызова Claude — значит, ревью оборвалось вместе с воркером."""
+    return datetime.now(UTC) - review.created_at >= timedelta(seconds=settings.agent_timeout_seconds * 2)
+
+
 def request_reference(db: Session, admin: User, task: Task, enqueue_job: bool = True) -> Review:
     version = practice.editing_version(db, task)
     spec = TaskSpec.model_validate(version.spec)
     current = reference_review(db, task)
     if current and current.status in (ReviewStatus.queued, ReviewStatus.running):
-        if datetime.now(UTC) - current.created_at < timedelta(seconds=settings.agent_timeout_seconds * 2):
+        if not is_stale(current):
             return current
         # Ревью, запущенное внутри задачи генерации, обрывается вместе с воркером и само не завершится
         current.status = ReviewStatus.failed

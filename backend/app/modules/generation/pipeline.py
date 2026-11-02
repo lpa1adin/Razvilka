@@ -596,11 +596,14 @@ def fix_by_review(db: Session, task: Task, admin: User, review, *, wait, stop=No
 
 def run_fix_reference(db: Session, task_id: int, admin_id: int) -> dict:
     """Кнопка «Исправить по замечаниям» в отчёте Ревьюера (для уже созданных заданий)."""
-    task = db.get(Task, task_id)
+    task, admin = db.get(Task, task_id), db.get(User, admin_id)
     review = review_service.reference_review(db, task)
-    if review is None:
-        raise ValueError("У этой редакции эталона ещё нет ревью")
-    review, notes = fix_by_review(db, task, db.get(User, admin_id), review, wait=_wait_checks)
+    if review is None or review.status.value != "done":
+        # Ревью нет или оно прервалось — сначала свежее ревью этой редакции, потом исправление
+        review = review_service.request_reference(db, admin, task, enqueue_job=False)
+        review_service.run(db, review.id)
+        db.refresh(review)
+    review, notes = fix_by_review(db, task, admin, review, wait=_wait_checks)
     return {"verdict": review.verdict, "notes": notes}
 
 

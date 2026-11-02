@@ -8,7 +8,7 @@
 """
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -262,7 +262,13 @@ def request_reference(db: Session, admin: User, task: Task, enqueue_job: bool = 
     spec = TaskSpec.model_validate(version.spec)
     current = reference_review(db, task)
     if current and current.status in (ReviewStatus.queued, ReviewStatus.running):
-        return current
+        if datetime.now(UTC) - current.created_at < timedelta(seconds=settings.agent_timeout_seconds * 2):
+            return current
+        # Ревью, запущенное внутри задачи генерации, обрывается вместе с воркером и само не завершится
+        current.status = ReviewStatus.failed
+        current.error = "Ревью прервано (перезапуск воркера) — запущено заново"
+        current.finished_at = datetime.now(UTC)
+        db.commit()
     files = {name: code for name, code in spec.solution.items() if code.strip()} or spec.solution
     if spec.kind == "sql":
         files = {"schema.sql": spec.sql_setup, **files}

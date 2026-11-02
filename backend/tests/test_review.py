@@ -176,3 +176,29 @@ def test_sql_reference_review_sees_checks(admin_client):
         review = rs.request_reference(db, admin, task, enqueue_job=False)
         assert set(review.files) == {"schema.sql", "query.sql", "checks.txt"}
         assert "Проверка 1: Только сложные" in review.files["checks.txt"] and "level > 2" in review.files["checks.txt"]
+
+
+def test_stale_running_reference_review_is_replaced(admin_client):
+    """Ревью эталона, оборванное перезапуском воркера, не висит вечно: новое запрашивается поверх."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.db import SessionLocal
+    from app.modules.auth.models import User
+    from app.modules.practice import service as practice
+    from app.modules.practice.schemas import TaskSpec
+    from app.modules.review import service as rs
+    from app.modules.review.models import ReviewStatus
+
+    spec = TaskSpec.model_validate({"title": "Шапка", "kind": "web", "statement": "Сделайте шапку",
+                                    "solution": {"index.html": "<header>Фишт</header>"}, "tests": "test('a', () => {})"})
+    with SessionLocal() as db:
+        admin = db.query(User).first()
+        task = practice.create_task(db, "Шапка", "web", admin, spec)
+        stale = rs.request_reference(db, admin, task, enqueue_job=False)
+        assert rs.request_reference(db, admin, task, enqueue_job=False).id == stale.id  # свежее «в работе» — то же
+        stale.status = ReviewStatus.running
+        stale.created_at = datetime.now(UTC) - timedelta(hours=9)
+        db.commit()
+        fresh = rs.request_reference(db, admin, task, enqueue_job=False)
+        db.refresh(stale)
+        assert fresh.id != stale.id and stale.status is ReviewStatus.failed and "прервано" in stale.error

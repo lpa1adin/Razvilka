@@ -117,6 +117,24 @@ def collect_articles(spec: SourceSpec, repo_dir: Path, commit: str) -> list[pars
             if article:
                 articles.append(article)
                 section_titles.setdefault(article.parent_key, article.section)
+    elif spec.parser == "react":
+        for file in sorted(repo_dir.glob("src/content/**/*.md")):
+            article = parsers.parse_react(file.relative_to(repo_dir).as_posix(), file.read_text(encoding="utf-8"))
+            if article:
+                articles.append(article)
+    elif spec.parser == "fastapi":
+
+        def read(rel: str) -> str | None:
+            target = (repo_dir / rel).resolve()
+            # примеры берём только из папки репозитория
+            if not target.is_relative_to(repo_dir.resolve()) or not target.is_file():
+                return None
+            return target.read_text(encoding="utf-8")
+
+        for file in sorted(repo_dir.glob("docs/ru/docs/**/*.md")):
+            article = parsers.parse_fastapi(file.relative_to(repo_dir).as_posix(), file.read_text(encoding="utf-8"), read)
+            if article:
+                articles.append(article)
     else:
         raise ValueError(f"Нет парсера {spec.parser!r}")
 

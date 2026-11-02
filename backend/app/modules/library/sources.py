@@ -27,7 +27,7 @@ class SourceSpec:
     license_file: str
     # строка, которая обязана быть в файле лицензии; нет её — значит, лицензию поменяли
     license_marker: str
-    parser: str  # mdn | jsinfo | owasp | pydocs
+    parser: str  # mdn | jsinfo | owasp | pydocs | react | fastapi
 
 
 SOURCES: dict[str, SourceSpec] = {
@@ -119,6 +119,58 @@ SOURCES: dict[str, SourceSpec] = {
             license_file="LICENSE",
             license_marker="Python Software Foundation License Version 2",
             parser="pydocs",
+        ),
+        SourceSpec(
+            slug="react-ru",
+            title="Документация React (ru.react.dev)",
+            author="Команда React (Meta) и переводчики",
+            kind="docs",
+            homepage="https://ru.react.dev/",
+            license_name="CC BY 4.0",
+            license_url="https://creativecommons.org/licenses/by/4.0/deed.ru",
+            license_mode=LicenseMode.full_text,
+            license_note=(
+                "Официальная документация React на русском, текст полностью с указанием авторов. Изменения: "
+                "интерактивные песочницы показаны как блоки кода, служебные компоненты сайта — как обычные врезки."
+            ),
+            repo="https://github.com/reactjs/ru.react.dev",
+            patterns=(
+                "/LICENSE-DOCS.md",
+                "/src/content/learn/**/*.md",
+                "/src/content/reference/react/*.md",
+                "/src/content/reference/react-dom/**/*.md",
+            ),
+            license_file="LICENSE-DOCS.md",
+            license_marker="Attribution 4.0 International",
+            parser="react",
+        ),
+        SourceSpec(
+            slug="fastapi-ru",
+            title="Документация FastAPI (fastapi.tiangolo.com/ru)",
+            author="Sebastián Ramírez и участники",
+            kind="docs",
+            homepage="https://fastapi.tiangolo.com/ru/",
+            license_name="MIT",
+            license_url="https://github.com/fastapi/fastapi/blob/master/LICENSE",
+            license_mode=LicenseMode.full_text,
+            license_note=(
+                "Официальная документация FastAPI на русском, текст полностью. Изменения: примеры кода подставлены "
+                "из репозитория (docs_src), врезки mkdocs показаны цитатами. © Sebastián Ramírez, лицензия MIT."
+            ),
+            repo="https://github.com/fastapi/fastapi",
+            patterns=(
+                "/LICENSE",
+                "/docs/ru/docs/tutorial/**/*.md",
+                "/docs/ru/docs/advanced/**/*.md",
+                "/docs/ru/docs/deployment/**/*.md",
+                "/docs/ru/docs/how-to/**/*.md",
+                "/docs/ru/docs/python-types.md",
+                "/docs/ru/docs/async.md",
+                "/docs_src/**/*.py",
+            ),
+            license_file="LICENSE",
+            license_marker="The MIT License",
+            parser="fastapi",
         ),
     )
 }

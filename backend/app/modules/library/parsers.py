@@ -332,3 +332,130 @@ def parse_pydocs(path: str, text: str) -> Article | None:
         excerpt=first_paragraph(content_html),
         plain_text=html_to_text(content_html),
     )
+
+
+# ---------- React (ru.react.dev, MDX) ----------
+
+REACT_BASE = "https://ru.react.dev/"
+REACT_SECTIONS = {"learn": "Изучение React", "reference": "Справочник API React"}
+
+# Компоненты сайта react.dev → обычная разметка. Песочницы (Sandpack) — просто блоки кода
+_REACT_LABELS = {
+    "Pitfall": "**Подводный камень.**", "Note": "**Примечание.**", "DeepDive": "**Подробнее.**",
+    "YouWillLearn": "**Вы узнаете:**", "Hint": "**Подсказка.**", "Solution": "**Решение.**",
+    "Challenges": "## Испытания", "Wip": "**Раздел в работе.**", "Canary": "**Только в canary-версии React.**",
+}
+_COMPONENT_LINE = re.compile(r"^\s*<(/?)([A-Z][A-Za-z]*)([^>]*?)(/?)>\s*$")
+
+
+def _react_markdown(body: str) -> str:
+    out, fence = [], False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            out.append(line)
+            continue
+        if fence:
+            out.append(line)
+            continue
+        line = re.sub(r"\s*\{/\*.*?\*/\}", "", line)  # якоря заголовков {/*anchor*/}
+        if m := _COMPONENT_LINE.match(line):
+            closing, name, attrs, self_closing = m.groups()
+            if closing or self_closing:
+                out.append("")
+            elif name == "Recipes" and (title := re.search(r'titleText="([^"]+)"', attrs)):
+                out += ["", f"### {title.group(1)}", ""]
+            else:
+                out += ["", _REACT_LABELS.get(name, ""), ""]
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def parse_react(path: str, text: str) -> Article | None:
+    match = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
+    if not match:
+        return None
+    meta = yaml.safe_load(match.group(1)) or {}
+    title = meta.get("title")
+    if not title:
+        return None
+    rel = path.removeprefix("src/content/").removesuffix(".md").removesuffix("/index").removesuffix("index")
+    body = _react_markdown(match.group(2))
+    content_html = render_markdown(body)
+    return Article(
+        external_id=path,
+        title=str(title),
+        url=REACT_BASE + rel.rstrip("/"),
+        parent_key=rel.split("/", 1)[0],
+        section=REACT_SECTIONS.get(rel.split("/", 1)[0], ""),
+        content_html=content_html,
+        outline=markdown_outline(body),
+        excerpt=first_paragraph(content_html),
+        plain_text=html_to_text(content_html),
+    )
+
+
+# ---------- FastAPI (fastapi.tiangolo.com/ru, mkdocs) ----------
+
+FASTAPI_BASE = "https://fastapi.tiangolo.com/ru/"
+FASTAPI_SECTIONS = {"tutorial": "Учебник FastAPI", "advanced": "FastAPI: продвинутое руководство",
+                    "deployment": "FastAPI: развёртывание", "how-to": "FastAPI: рецепты"}
+_FA_INCLUDE = re.compile(r"\{\*\s*(\S+)(.*?)\*\}")
+_FA_OLD_INCLUDE = re.compile(r"\{!\s*(\S+?)\s*!\}")
+_FA_ADMONITION = {"tip": "Подсказка", "note": "Примечание", "info": "Информация", "warning": "Внимание",
+                  "danger": "Осторожно", "check": "Проверка", "details": "Подробнее", "abstract": "Кратко"}
+
+
+def _fastapi_markdown(body: str, read) -> str:
+    """{* ../../docs_src/x.py hl[3] *} → код из репозитория; /// tip | Заголовок … /// → врезка."""
+
+    def include(src: str, opts: str = "") -> str:
+        code = read(re.sub(r"^(\.\./)+", "", src))
+        if code is None:
+            return f"*Пример кода: {src.rsplit('/', 1)[-1]}*"
+        if lines := re.search(r"ln\[(\d+):(\d+)\]", opts):
+            code = "\n".join(code.splitlines()[int(lines.group(1)) - 1 : int(lines.group(2))])
+        return code.rstrip()
+
+    body = _FA_INCLUDE.sub(lambda m: f"```python\n{include(m.group(1), m.group(2))}\n```", body)
+    body = _FA_OLD_INCLUDE.sub(lambda m: include(m.group(1)), body)
+    out, quote = [], False
+    for line in body.splitlines():
+        if m := re.match(r"^///\s*([a-z]+)?\s*(?:\|\s*(.+))?$", line.strip()):
+            kind, title = m.groups()
+            if kind:  # начало врезки
+                out += ["", f"> **{(title or _FA_ADMONITION.get(kind, kind)).strip()}.**", ">"]
+                quote = True
+            else:
+                out.append("")
+                quote = False
+            continue
+        line = re.sub(r"\s*\{\s*#[\w-]+\s*\}\s*$", "", line)  # якоря заголовков { #anchor }
+        out.append(f"> {line}" if quote else line)
+    return "\n".join(out)
+
+
+def parse_fastapi(path: str, text: str, read) -> Article | None:
+    """read(путь от корня репозитория) → текст файла или None: из него берутся примеры docs_src."""
+    lines = text.splitlines()
+    head = next((i for i, l in enumerate(lines) if l.startswith("# ")), None)
+    if head is None:
+        return None
+    title = re.sub(r"\s*\{\s*#[\w-]+\s*\}\s*$", "", lines[head][2:]).strip()
+    title = html_to_text(title)
+    body = _fastapi_markdown("\n".join(lines[head + 1 :]), read)
+    rel = path.removeprefix("docs/ru/docs/").removesuffix(".md")
+    rel = rel.removesuffix("index").rstrip("/")
+    content_html = render_markdown(body)
+    return Article(
+        external_id=path,
+        title=title,
+        url=FASTAPI_BASE + (rel + "/" if rel else ""),
+        parent_key=rel.split("/", 1)[0] if "/" in rel else "",
+        section=FASTAPI_SECTIONS.get(rel.split("/", 1)[0], "FastAPI"),
+        content_html=content_html,
+        outline=markdown_outline(body),
+        excerpt=first_paragraph(content_html),
+        plain_text=html_to_text(content_html),
+    )

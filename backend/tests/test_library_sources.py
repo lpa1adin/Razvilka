@@ -78,3 +78,71 @@ def test_every_reviewer_rule_has_a_source():
     sec02 = next(r for r in rules if r.id == "SEC-02")
     assert sec02.text == "SQL — только параметризованные запросы или ORM."
     assert "SQL_Injection_Prevention_Cheat_Sheet" in sec02.source
+
+
+REACT = """---
+title: Условный рендеринг
+---
+
+<Intro>
+
+Компоненты показывают разное в зависимости от условий.
+
+</Intro>
+
+## Условный возврат JSX {/*conditionally-returning-jsx*/}
+
+<Sandpack>
+
+```js
+export default function Item({ name }) {
+  return <li>{name}</li>;
+}
+```
+
+</Sandpack>
+
+<Pitfall>
+
+Не ставьте числа слева от `&&`.
+
+</Pitfall>
+
+<Recipes titleText="Примеры состояния" titleId="ex">
+"""
+
+FASTAPI = """# Path-параметры { #path-parameters }
+
+Параметры пути:
+
+{* ../../docs_src/path_params/tutorial001_py310.py hl[6:7] *}
+
+/// tip | Подсказка
+
+Это даёт поддержку редактора.
+
+///
+
+## С типами { #with-types }
+"""
+
+
+def test_react_parser_strips_site_components():
+    a = parsers.parse_react("src/content/learn/conditional-rendering.md", REACT)
+    assert a.title == "Условный рендеринг" and a.url == "https://ru.react.dev/learn/conditional-rendering"
+    assert a.section == "Изучение React" and {"level": 2, "title": "Условный возврат JSX"} in a.outline
+    assert "Sandpack" not in a.content_html and "{/*" not in a.content_html
+    assert "&lt;li&gt;{name}&lt;/li&gt;" in a.content_html  # JSX в коде экранирован, а не выкинут
+    assert "<strong>Подводный камень.</strong>" in a.content_html and "Примеры состояния" in a.plain_text
+    assert parsers.parse_react("src/content/learn/index.md", REACT).url == "https://ru.react.dev/learn"
+
+
+def test_fastapi_parser_inlines_code_from_repo():
+    files = {"docs_src/path_params/tutorial001_py310.py": "from fastapi import FastAPI\n\napp = FastAPI()\n"}
+    a = parsers.parse_fastapi("docs/ru/docs/tutorial/path-params.md", FASTAPI, files.get)
+    assert a.title == "Path-параметры" and a.url == "https://fastapi.tiangolo.com/ru/tutorial/path-params/"
+    assert a.section == "Учебник FastAPI" and {"level": 2, "title": "С типами"} in a.outline
+    assert "app = FastAPI()" in a.content_html and "{*" not in a.content_html
+    assert "<blockquote>" in a.content_html and "Подсказка." in a.plain_text and "///" not in a.plain_text
+    missing = parsers.parse_fastapi("docs/ru/docs/tutorial/path-params.md", FASTAPI, lambda _: None)
+    assert "Пример кода: tutorial001_py310.py" in missing.plain_text

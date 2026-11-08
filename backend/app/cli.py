@@ -82,6 +82,7 @@ def main() -> None:
     sub.add_parser("seed-quizzes", help="загрузить банки вопросов")
     sub.add_parser("seed-assessment", help="рубрика Оценщика, эталонные проекты и практикумы (этап 6)")
     sub.add_parser("export-reviewer", help="напечатать агента Ревьюера для Claude Code (.claude/agents/reviewer.md)")
+    sub.add_parser("status", help="что в работе и что ждёт решения: очередь, заявки, задания, банки вопросов")
     args = parser.parse_args()
 
     if args.command == "seed-assessment":
@@ -96,6 +97,13 @@ def main() -> None:
 
         with SessionLocal() as db:
             print(agent_markdown(active_rules(db)), end="")
+        return
+
+    if args.command == "status":
+        from app.modules.system.status import report
+
+        with SessionLocal() as db:
+            print(report(db))
         return
 
     if args.command == "seed-quizzes":

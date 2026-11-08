@@ -158,6 +158,11 @@ class Stopped(Exception):
     """Вызов прерван по просьбе админа (пауза генерации)."""
 
 
+def model_for(purpose: str) -> str:
+    """Текстовые задачи — на модели дешевле, код и суждения о коде — на самой сильной."""
+    return settings.text_model if purpose in settings.text_purposes.split(",") else settings.agent_model
+
+
 def _run(purpose: str, coro):
     if not configured():
         raise AgentUnavailable("Claude не подключён: добавьте CLAUDE_CODE_OAUTH_TOKEN в .env и перезапустите agent-worker.")
@@ -245,8 +250,7 @@ def run_structured(
         system, cwd=cwd, effort=effort, max_turns=max_turns, library=library,
         output_format={"type": "json_schema", "schema": schema.model_json_schema()},
     )
-    if model:
-        options.model = model
+    options.model = model or model_for(purpose)
     result = _run(purpose, _consume(purpose, prompt, options, on_event))
     if on_usage:
         on_usage(tokens(result.usage))
@@ -273,5 +277,6 @@ def stream_reply(prompt: str, system: str, on_delta: Callable[[str], None]) -> s
                 on_delta(text)
 
     options = _options(system, cwd=None, effort="medium", max_turns=8, include_partial_messages=True)
+    options.model = model_for("chat")
     result = _run("chat", _consume("chat", prompt, options, on_event))
     return "".join(parts) or (result.result or "")

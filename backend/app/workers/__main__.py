@@ -95,7 +95,7 @@ def heartbeat(kind: str, stopping: threading.Event) -> None:
 def work(kind: str, stopping: threading.Event) -> None:
     with SessionLocal() as db:
         if requeued := queue.requeue_interrupted(db, kind):
-            log.warning("вернул в очередь недоделанные задачи %s: %s", kind, requeued)
+            log.warning("недоделанные задачи %s: %s (бесплатные — снова в очереди, платные — остановлены до запуска вручную)", kind, requeued)
     log.info("воркер %s запущен", kind)
     next_schedule_check = 0.0
 

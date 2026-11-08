@@ -573,3 +573,42 @@ def test_hung_claude_call_times_out(monkeypatch):
     with pytest.raises(claude.AgentUnavailable, match="не ответил"):
         claude._run("probe", hung())
     assert closed == [True]
+
+
+def test_text_on_cheaper_model_code_on_strongest():
+    """Текст (план, уроки, чат) — на модели дешевле; исправление кода, Ревьюер и Оценщик — на самой сильной."""
+    from app.core.config import settings
+
+    assert {claude.model_for(p) for p in ("plan", "draft", "chat", "arch")} == {settings.text_model}
+    assert {claude.model_for(p) for p in ("fix", "review", "evaluate")} == {settings.agent_model}
+    assert settings.text_model != settings.agent_model
+
+
+def test_paid_jobs_are_not_resumed_after_restart(admin_client, projects, fake_claude):
+    """Перезапуск воркера не возобновляет работу Claude молча: задача падает, генерация встаёт на паузу."""
+    from app.modules.jobs import queue
+    from app.modules.jobs.models import JobStatus
+
+    fragment = make_fragment("Семантика HTML", "header nav main")
+    rid = drafted_plan(admin_client, fake_claude, fragment)
+    with SessionLocal() as db:
+        job = db.scalars(select(Job).where(Job.kind == "agent", Job.status == "queued")).one()
+        job.status = JobStatus.running
+        runner_job = queue.enqueue(db, "runner", {"type": "verify_task", "version_id": "1"})
+        runner_job.status = JobStatus.running
+        db.commit()
+        assert queue.requeue_interrupted(db, "agent") == 1 and queue.requeue_interrupted(db, "runner") == 1
+        db.refresh(job), db.refresh(runner_job)
+        assert job.status is JobStatus.failed and "Прервано перезапуском" in job.error
+        assert runner_job.status is JobStatus.queued  # бесплатное (без Claude) повторяем как раньше
+    req = admin_client.get(f"/api/workshop/generate/requests/{rid}").json()
+    assert req["status"] == "paused"  # «Продолжить» на экране заявки — решение админа
+
+
+def test_status_report_is_short_and_complete(admin_client):
+    from app.modules.system.status import report
+
+    with SessionLocal() as db:
+        text = report(db)
+    assert text.startswith("Claude:") and "Заявки генерации:" in text and "Банки вопросов вне 20–50:" in text
+    assert len(text.splitlines()) < 60

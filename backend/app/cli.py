@@ -2,6 +2,9 @@
   python -m app.cli create-user <login> --role admin
   python -m app.cli seed-demo-tasks      — три демо-задания (веб, Python, SQL) черновиками
   python -m app.cli seed-quizzes         — банки вопросов для тестов (опубликованные темы)
+  python -m app.cli map [курс]           — карта курса с адресами ячеек (без номера — список курсов)
+  python -m app.cli show <адрес>         — одна ячейка: урок, блок, поле задания, вопрос (адреса — в system/cells.py)
+  python -m app.cli set <адрес> < файл   — записать ячейку в черновик; у заданий сразу бесплатная автопроверка
 """
 
 import argparse
@@ -83,7 +86,34 @@ def main() -> None:
     sub.add_parser("seed-assessment", help="рубрика Оценщика, эталонные проекты и практикумы (этап 6)")
     sub.add_parser("export-reviewer", help="напечатать агента Ревьюера для Claude Code (.claude/agents/reviewer.md)")
     sub.add_parser("status", help="что в работе и что ждёт решения: очередь, заявки, задания, банки вопросов")
+    cmd = sub.add_parser("map", help="карта курса с адресами ячеек; без номера — список курсов")
+    cmd.add_argument("course", nargs="?", type=int)
+    cmd = sub.add_parser("show", help="показать одну ячейку: 7/2.3, 7/2.3/4, task:28/tests, quiz:5/12, fragment:9")
+    cmd.add_argument("address")
+    cmd.add_argument("--full", action="store_true", help="статью библиотеки — целиком")
+    cmd = sub.add_parser("set", help="записать ячейку в черновик; значение — из --file или stdin")
+    cmd.add_argument("address")
+    cmd.add_argument("--file", help="файл со значением (внутри контейнера); без него читается stdin")
+    cmd.add_argument("--no-check", action="store_true", help="не запускать автопроверку задания")
     args = parser.parse_args()
+
+    if args.command in ("map", "show", "set"):
+        import sys
+
+        from app.modules.system import cells
+
+        with SessionLocal() as db:
+            try:
+                if args.command == "map":
+                    print(cells.course_map(db, args.course) if args.course else cells.course_list(db))
+                elif args.command == "show":
+                    print(cells.show(db, args.address, full=args.full))
+                else:
+                    value = Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
+                    print(cells.set_cell(db, args.address, value, check=not args.no_check))
+            except cells.CellError as exc:
+                parser.exit(1, f"{exc}\n")
+        return
 
     if args.command == "seed-assessment":
         from app.modules.assess.service import seed_all
